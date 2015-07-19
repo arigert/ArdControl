@@ -14,6 +14,7 @@
 ### Contribution guidelines ###
 
 To do list:
+
 * make a progress dialog box pop up while it's connecting 
 * fix problems with Bluetooth reconnecting after disconnecting
 * add a pin diagram and allow diagram to click a pin to select a field?
