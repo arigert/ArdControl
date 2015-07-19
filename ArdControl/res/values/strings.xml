@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">Arduino Control</string>
+    <string name="connect_label">Connect</string>
+    <string name="disconnect_label">Disconnect</string>
+    
+    <string-array name="mode_names">
+        <item>Off</item>
+        <item>Digital Input (Switch)</item>
+        <item>Digital Output (LED)</item>
+        <item>Analog Input (Pot)</item>
+        <item>Analog Output (Buzzer)</item>
+        <item>Input w/ Pullup (Button)</item>
+    </string-array>
+
+</resources>

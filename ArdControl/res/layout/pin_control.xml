@@ -1,0 +1,38 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:orientation="horizontal"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content" >
+
+  <TextView
+   android:id="@+id/pin_name"
+   android:layout_width="wrap_content"
+   android:layout_height="wrap_content"
+   android:ems="2"
+   android:textSize="20dp"
+   android:textStyle="bold" />
+  
+  <EditText
+      android:id="@+id/name"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:inputType="text" 
+      android:ellipsize="end"
+   	  android:hint="type custom label" />
+  
+  <EditText
+      android:id="@+id/val"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:inputType="text"
+      android:ems="3" 
+      android:background="@color/gray"
+      android:text="0"/>
+    
+  <Spinner
+     android:id="@+id/mode"
+     android:layout_width="wrap_content"
+     android:layout_height="wrap_content" />
+
+</LinearLayout>
