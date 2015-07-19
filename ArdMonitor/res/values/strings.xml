@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="app_name">Arduino Monitor</string>
+    <string name="app_name">Arduino Control</string>
     <string name="connect_label">Connect</string>
     <string name="disconnect_label">Disconnect</string>
     

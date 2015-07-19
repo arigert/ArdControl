@@ -1,10 +1,10 @@
-package com.example.ardmonitor;
+package com.example.ardcontrol;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-import com.example.ardmonitor.R;
+import com.example.ardcontrol.R;
  
 import android.app.Activity;
 import android.app.ProgressDialog;
