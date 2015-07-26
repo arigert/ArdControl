@@ -18,6 +18,7 @@
     </style>
     
     <item name="gray" type="color">#FFCCCCCC</item>
+    <item name="light_gray" type="color">#FFF3F3F3</item>
     <item name="white" type="color">#FFFFFFFF</item>
     <item name="black" type="color">#FF000000</item>
 	
