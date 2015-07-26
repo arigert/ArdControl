@@ -122,7 +122,7 @@ public class MainActivity extends Activity implements OnClickListener {
 	ArrayList<String> btDeviceAddresses = null;
 	
 	// Create a BroadcastReceiver for ACTION_FOUND
-	final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+	BroadcastReceiver mReceiver = new BroadcastReceiver() {
 	    public void onReceive(Context context, Intent intent) {
 	        String action = intent.getAction();
 	        // When discovery finds a device
@@ -232,7 +232,7 @@ public class MainActivity extends Activity implements OnClickListener {
     public void onClick(View control) {
         // if Connect button is clicked, connect with BT
 		if (control.getId() == R.id.connect) {
-        	connect();
+        	findDevices();
         }
     }
  
@@ -260,87 +260,82 @@ public class MainActivity extends Activity implements OnClickListener {
 			}
 		}
 	}
+	
+	public void connectDevice(String address) {
+		// cancel BT discovery because we selected a device
+		mBluetoothAdapter.cancelDiscovery();
+		
+		// close any existing BT connection
+		if (btSocket != null) {
+			try {
+				btSocket.close();
+			} catch (IOException e2) {
+	            Log.d(TAG, "Unable to end the connection");
+	        }
+		}
+				
+		BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+			       
+        try {
+        	// create BT socket from our device and connect to it
+        	btSocket = (BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(device,1);
+            btSocket.connect();
+    		Toast.makeText(getApplicationContext(), "Connected!", Toast.LENGTH_LONG).show();	
+    		
+    		// hide list of devices
+    		((ListView)findViewById(R.id.btDeviceList)).setVisibility(View.INVISIBLE);
+
+        } catch (Exception e) {
+            // if there's a problem, close the socket
+        	try {
+            	btSocket.close();
+            } catch (IOException e2) {
+                Log.d(TAG, "Unable to end the connection");
+            }
+            Toast.makeText(getApplicationContext(), "Connection failed.", Toast.LENGTH_LONG).show();
+        }
+       
+        // start listening for data
+        beginListenForData();
+	}
 
        
     // try to connect with BT
-	public void connect() {		
-		// if not connected, connect
-		if (!connected) {
-	        // connect
-			BluetoothDevice device = null;
-
-			// *********************** TODO NEW BT STUFF ***********************
-			mBluetoothAdapter.startDiscovery();
-			
-			((ListView)findViewById(R.id.btDeviceList)).setAdapter(btDeviceAdapter);
-			((ListView)findViewById(R.id.btDeviceList)).setOnItemClickListener(new OnItemClickListener()
-			{
-			    @Override 
-			    public void onItemClick(AdapterView<?> arg0, View arg1,int position, long arg3)
-			    { 
-			        Toast.makeText(getApplicationContext(), btDeviceAddresses.get(position), Toast.LENGTH_SHORT).show();
-			    }
-			});
-			
-			Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
-			// If there are paired devices
-			if (pairedDevices.size() > 0) {
-			    // Loop through paired devices
-			    for (BluetoothDevice btDevice : pairedDevices) {
-			        // Add the name and address to an array adapter to show in a ListView
-			        btDeviceAdapter.add(btDevice.getName() + "\n" + btDevice.getAddress());
-			        btDeviceAddresses.add(btDevice.getAddress());
-			    }
-			}
-			//while (btDeviceAddresses.size() < 2) {
-			//}
-
-			device = mBluetoothAdapter.getRemoteDevice(btDeviceAddresses.get(0));//"98:D3:31:60:14:85");
-			
-			
+	public void findDevices() {		
+		// delete anything already found so we don't get duplicates
+		btDeviceAdapter.clear();
+		btDeviceAddresses.clear();
 		
-			//*********************** END NEW ***********************
-	        
-	        // cancel discovery because it's costly
-	        /*mBluetoothAdapter.cancelDiscovery();
-	       
-	        try {
-	        	// create BT socket from our device and connect to it
-	        	btSocket = (BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(device,1);
-	            btSocket.connect();
-	            Log.d(TAG, "Connection made.");
-	            
-	            // set button so clicking it will now disconnect/exit
-	            connect.setText(R.string.disconnect_label);
-	            connected = true;
-	        } catch (Exception e) {
-	            // if there's a problem, close the socket
-	        	try {
-	            	btSocket.close();
-	            } catch (IOException e2) {
-	                Log.d(TAG, "Unable to end the connection");
-	            }
-	            Log.d(TAG, "Socket creation failed");
-	            e.printStackTrace();
-	        }
-	       
-	        // start listening for data
-	        beginListenForData();        */
-    	} 
-    	else {
-    		connect.setText(R.string.connect_label);
-            connected = false;
-            
-            // already connected, so disconnect
-    		try {
-    			btSocket.close();
-	        } catch (IOException e2) {
-	            Log.d(TAG, "Unable to end the connection");
-	        }
-
-    		btSocket = null;
-
-    	}
+		mBluetoothAdapter.startDiscovery();
+		
+		((ListView)findViewById(R.id.btDeviceList)).setAdapter(btDeviceAdapter);
+		((ListView)findViewById(R.id.btDeviceList)).setOnItemClickListener(new OnItemClickListener()
+		{
+		    @Override 
+		    public void onItemClick(AdapterView<?> arg0, View arg1,int position, long arg3)
+		    { 
+		        connectDevice(btDeviceAddresses.get(position));
+		    }
+		});
+		
+		unregisterReceiver(mReceiver); // Don't forget to unregister during onDestroy
+		
+		mReceiver = new BroadcastReceiver() {
+		    public void onReceive(Context context, Intent intent) {
+		        String action = intent.getAction();
+		        // When discovery finds a device
+		        if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+		            // Get the BluetoothDevice object from the Intent
+		            BluetoothDevice newDevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+		            // Add the name and address to an array adapter to show in a ListView
+		            btDeviceAdapter.add("Discovered: " + newDevice.getName() + "\n" + newDevice.getAddress());
+		            btDeviceAddresses.add(newDevice.getAddress());
+		        }
+		    }
+		};
+		
+		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
     }
        
     // send data to Arduino
@@ -379,6 +374,8 @@ public class MainActivity extends Activity implements OnClickListener {
             } catch (IOException e) {
             }
     	}
+    	
+    	unregisterReceiver(mReceiver); // Don't forget to unregister during onDestroy
     }
        
     // listen for data coming from Arduino

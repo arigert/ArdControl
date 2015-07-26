@@ -7,9 +7,9 @@
     <Button
 	        android:id="@+id/connect"
 	        android:layout_width="wrap_content"
-	        android:ems="7"
+	        android:ems="15"
 	        android:layout_height="wrap_content"
-	        android:layout_marginBottom="30dp"
+	        android:layout_marginBottom="10dp"
 	        android:text="@string/connect_label"
 	        android:textStyle="bold" />
     
@@ -17,7 +17,8 @@
 <ListView 
     android:id="@+id/btDeviceList"
     android:layout_width="fill_parent"
-    android:layout_height="wrap_content" />
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="30dp" />
     
 
 	<include layout="@layout/pin_gui"/>
