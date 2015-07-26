@@ -24,6 +24,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -64,6 +65,11 @@ public class MainActivity extends Activity implements OnClickListener {
 	// BT stuff
 	private BluetoothAdapter mBluetoothAdapter = null;
 	private BluetoothSocket btSocket = null;
+	ListView btDeviceList;
+	ArrayAdapter<String> btDeviceAdapter = null;
+	ArrayList<String> btDeviceAddresses = null;
+	BroadcastReceiver mReceiver = null;
+	ProgressDialog progress = null;
 	
 	// input/output
 	private InputStream inStream = null;
@@ -77,65 +83,44 @@ public class MainActivity extends Activity implements OnClickListener {
 	// debug
 	private static final String TAG = "BT-Ard";
 	
-	// is it already connected?
-	boolean connected = false;
-	
 	// worker (thread) stuff
 	boolean stopWorker = false;
 	Handler handler = new Handler();
 	
 	// selected part (led, pot, etc)
 	int selectedPart = -1;
-		
+	
+	// for context problems
+	Context MainActivity = this;
+	
 	// UI handler stuff so we don't tie up the main thread
-	Handler UIHandler = new Handler(Looper.getMainLooper()) {
-		// what the handler should do when we send it a message
-        @Override
-        public void handleMessage(Message inputMessage) {
-            // get the object sent in the message and cast it to a String (because we are sending a string)
-            String data = (String) inputMessage.obj; 
-            String[] indData = data.split("\\s");
-            if (indData != null && indData.length >= 2) {
-            	int pinIndex = java.util.Arrays.asList(pinName).indexOf(indData[0].trim());
-            	if (pinIndex >= 0) {
-            		int modeNum = pinMode[pinIndex].getSelectedItemPosition();
-            		if (modeNum % 2 == 1) pinVal[pinIndex].setText(indData[1]);
-	            	
-	    	        if (pinMode[pinIndex].getSelectedItemPosition() == 0) {
-	    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.gray));
-	    	        }
-	    	        else {
-	    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.white));	        	
-	    	        }
-	            	
-	            	// send a reply
-	            	sendData(pinIndex);
-	            	
-            	}
-            }
-        }
-	};
-	
-	// TODO new BT stuff
-	
-	ArrayAdapter<String> btDeviceAdapter = null;
-	ArrayList<String> btDeviceAddresses = null;
-	
-	// Create a BroadcastReceiver for ACTION_FOUND
-	BroadcastReceiver mReceiver = new BroadcastReceiver() {
-	    public void onReceive(Context context, Intent intent) {
-	        String action = intent.getAction();
-	        // When discovery finds a device
-	        if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-	            // Get the BluetoothDevice object from the Intent
-	            BluetoothDevice newDevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-	            // Add the name and address to an array adapter to show in a ListView
-	            btDeviceAdapter.add("Discovered: " + newDevice.getName() + "\n" + newDevice.getAddress());
-	            btDeviceAddresses.add(newDevice.getAddress());
+		Handler UIHandler = new Handler(Looper.getMainLooper()) {
+			// what the handler should do when we send it a message
+	        @Override
+	        public void handleMessage(Message inputMessage) {
+	            // get the object sent in the message and cast it to a String (because we are sending a string)
+	            String data = (String) inputMessage.obj; 
+	            String[] indData = data.split("\\s");
+	            if (indData != null && indData.length >= 2) {
+	            	int pinIndex = java.util.Arrays.asList(pinName).indexOf(indData[0].trim());
+	            	if (pinIndex >= 0) {
+	            		int modeNum = pinMode[pinIndex].getSelectedItemPosition();
+	            		if (modeNum % 2 == 1) pinVal[pinIndex].setText(indData[1]);
+		            	
+		    	        if (pinMode[pinIndex].getSelectedItemPosition() == 0) {
+		    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.gray));
+		    	        }
+		    	        else {
+		    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.white));	        	
+		    	        }
+		            	
+		            	// send a reply
+		            	sendData(pinIndex);
+		            	
+	            	}
+	            }
 	        }
-	    }
-	};
-	// END NEW
+		};
 	
  
     // on app creation, do this...
@@ -184,17 +169,13 @@ public class MainActivity extends Activity implements OnClickListener {
          
          // get our GUI items
          connect = (Button) findViewById(R.id.connect);
+         btDeviceList = (ListView) findViewById(R.id.btDeviceList);
          
          // set the click listeners for the buttons
          connect.setOnClickListener(this);
  
          // check if BT adapter is enabled and working
          checkBt();
-         
-         // don't know what this does (logs something, but what?)
-         //BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
-         //Log.e("BT", device.toString());
-         
          
          // TODO update with parts
          
@@ -246,7 +227,7 @@ public class MainActivity extends Activity implements OnClickListener {
             startActivityForResult(turnOnIntent, 0);
         }
         if (mBluetoothAdapter == null) {
-        	Toast.makeText(getApplicationContext(), "Bluetooth adapter is not available!", Toast.LENGTH_SHORT).show();
+        	Toast.makeText(getApplicationContext(), "Bluetooth adapter is not available!", Toast.LENGTH_LONG).show();
         }
     }
 	
@@ -261,7 +242,9 @@ public class MainActivity extends Activity implements OnClickListener {
 		}
 	}
 	
-	public void connectDevice(String address) {
+	public boolean connectDevice(String address) {
+		boolean returnVal = false;
+		
 		// cancel BT discovery because we selected a device
 		mBluetoothAdapter.cancelDiscovery();
 		
@@ -280,10 +263,8 @@ public class MainActivity extends Activity implements OnClickListener {
         	// create BT socket from our device and connect to it
         	btSocket = (BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(device,1);
             btSocket.connect();
-    		Toast.makeText(getApplicationContext(), "Connected!", Toast.LENGTH_LONG).show();	
-    		
-    		// hide list of devices
-    		((ListView)findViewById(R.id.btDeviceList)).setVisibility(View.INVISIBLE);
+                        
+            returnVal = true;
 
         } catch (Exception e) {
             // if there's a problem, close the socket
@@ -292,33 +273,72 @@ public class MainActivity extends Activity implements OnClickListener {
             } catch (IOException e2) {
                 Log.d(TAG, "Unable to end the connection");
             }
-            Toast.makeText(getApplicationContext(), "Connection failed.", Toast.LENGTH_LONG).show();
+            
+            e.printStackTrace();
         }
        
         // start listening for data
         beginListenForData();
-	}
+        
+        return returnVal;
+    }
 
        
-    // try to connect with BT
+    // try to find BT devices
 	public void findDevices() {		
 		// delete anything already found so we don't get duplicates
 		btDeviceAdapter.clear();
 		btDeviceAddresses.clear();
 		
+		// start discovering devices
 		mBluetoothAdapter.startDiscovery();
 		
-		((ListView)findViewById(R.id.btDeviceList)).setAdapter(btDeviceAdapter);
-		((ListView)findViewById(R.id.btDeviceList)).setOnItemClickListener(new OnItemClickListener()
-		{
+		btDeviceList.setAdapter(btDeviceAdapter);
+		btDeviceList.setOnItemClickListener(new OnItemClickListener()
+		{		    
 		    @Override 
-		    public void onItemClick(AdapterView<?> arg0, View arg1,int position, long arg3)
+		    public void onItemClick(AdapterView<?> arg0, View arg1, int position, long arg3)
 		    { 
-		        connectDevice(btDeviceAddresses.get(position));
+		    	final int pos = position;
+		    	
+		    	
+	    		new Thread(new Runnable(){
+
+                    public void run(){
+                    	runOnUiThread(new Runnable() {
+        	    			public void run() {
+        	    				progress = ProgressDialog.show(MainActivity.this, "Connecting", "Connecting to " + btDeviceList.getItemAtPosition(pos).toString(), true);
+                	    		progress.setCancelable(true);
+        	    			}
+        	    		});
+                	    		
+        	    		final boolean success = connectDevice(btDeviceAddresses.get(pos));
+                	    
+        	    		runOnUiThread(new Runnable() {
+        	    			public void run() {
+        	    				progress.dismiss();
+        	    				
+        	    				if (success) {
+		        	    			Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();	   		
+		        	        		
+		        	        		// hide list of devices
+		        	        		btDeviceList.setVisibility(View.GONE);            	    		
+		        	    		}
+		        	    		else {
+		        	    			Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();	   		
+		        	    		}
+        	    			}
+        	    		});
+                    }
+
+                }).start();
+	    			
 		    }
 		});
 		
-		unregisterReceiver(mReceiver); // Don't forget to unregister during onDestroy
+		if (mReceiver != null) {
+			unregisterReceiver(mReceiver);
+		}
 		
 		mReceiver = new BroadcastReceiver() {
 		    public void onReceive(Context context, Intent intent) {
@@ -328,7 +348,7 @@ public class MainActivity extends Activity implements OnClickListener {
 		            // Get the BluetoothDevice object from the Intent
 		            BluetoothDevice newDevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 		            // Add the name and address to an array adapter to show in a ListView
-		            btDeviceAdapter.add("Discovered: " + newDevice.getName() + "\n" + newDevice.getAddress());
+		            btDeviceAdapter.add(newDevice.getName() + "\n" + newDevice.getAddress());
 		            btDeviceAddresses.add(newDevice.getAddress());
 		        }
 		    }
@@ -375,7 +395,10 @@ public class MainActivity extends Activity implements OnClickListener {
             }
     	}
     	
-    	unregisterReceiver(mReceiver); // Don't forget to unregister during onDestroy
+    	// unregister BT receiver
+    	if (mReceiver != null) {
+			unregisterReceiver(mReceiver);
+		}
     }
        
     // listen for data coming from Arduino
