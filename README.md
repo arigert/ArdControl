@@ -13,13 +13,14 @@
 
 #### Wish list ####
 
-* Enable searching for Bluetooth devices rather than using a hard-coded MAC address
-* Make a progress dialog box pop up while it's connecting 
+* Make a progress dialog box pop up while it's searching for devices 
+* Add Disconnect button
 * Fix problems with Bluetooth not reconnecting after disconnecting
-* Make a pin turn Off and have no label when you drag an icon off of it
+* Remove a pin's icon if its mode is manually set
 * Disable illegal modes, like analogWrite on a non-PWM pin
-* Maybe work on UI design
-* Maybe add additional modes, like "play a tone"
+* Maybe work on UI design, especially for Bluetooth stuff
+* Maybe add additional modes (tone, Serial)
+* Maybe add additional items (temp sensor, tilt sensor, RGB LED, motor, shift register)
 
 #### Contact ####
 
