@@ -1,14 +1,17 @@
-// TODO: Connect progress dialog, fix connect/disconnect, make it Off when you remove something
-// Maybe: add stuff like tone, disable illegal drops
+// TODO: Progress dialog for searching for BT devices
+// Disconnect button
+// Better UI for BT stuff
+// Maybe remove the picture when the mode is manually set
+// Maybe disable illegal drops
+// Maybe add more modes (tone? Serial?) or items (temp sensor, tilt, RGB LED, motor, shift register)
 
 package com.example.ardcontrol;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.reflect.Array;
 import java.util.ArrayList;
-import java.util.Set;
+import java.util.Arrays;
 
 import com.example.ardcontrol.R;
  
@@ -24,11 +27,11 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -71,6 +74,22 @@ public class MainActivity extends Activity implements OnClickListener {
 	BroadcastReceiver mReceiver = null;
 	ProgressDialog progress = null;
 	
+	// available parts list
+	// TODO insert parts here
+    int[] partIds = {R.id.led, R.id.pot, R.id.button, R.id.spst, R.id.photo, R.id.servo};
+    int[] sourceIds = {R.id.ledSource, R.id.potSource, R.id.buttonSource, R.id.spstSource, R.id.photoSource, R.id.servoSource};
+    int[] partDrawables = {R.drawable.led_on, R.drawable.pot, R.drawable.button, R.drawable.spst, R.drawable.photo, R.drawable.servo};
+    int[] partModes = {2, 3, 5, 1, 3, 4};
+    String[] partLabels = {"LED", "Potentiometer", "Button", "Switch", "Photoresistor", "Servo"};
+    
+    // ids so we don't duplicate
+    int[] pinIds = {R.id.D2pin, R.id.D3pin, R.id.D4pin, R.id.D5pin, R.id.D6pin, R.id.D7pin, R.id.D8pin, R.id.D9pin, R.id.D10pin, R.id.D11pin, R.id.D12pin, R.id.D13pin, R.id.A0pin, R.id.A1pin, R.id.A2pin, R.id.A3pin, R.id.A4pin, R.id.A5pin};
+    int[] pinValIds = {R.id.D2pinVal, R.id.D3pinVal, R.id.D4pinVal, R.id.D5pinVal, R.id.D6pinVal, R.id.D7pinVal, R.id.D8pinVal, R.id.D9pinVal, R.id.D10pinVal, R.id.D11pinVal, R.id.D12pinVal, R.id.D13pinVal, R.id.A0pinVal, R.id.A1pinVal, R.id.A2pinVal, R.id.A3pinVal, R.id.A4pinVal, R.id.A5pinVal};
+    int[] pinLabelIds = {R.id.D2pinLabel, R.id.D3pinLabel, R.id.D4pinLabel, R.id.D5pinLabel, R.id.D6pinLabel, R.id.D7pinLabel, R.id.D8pinLabel, R.id.D9pinLabel, R.id.D10pinLabel, R.id.D11pinLabel, R.id.D12pinLabel, R.id.D13pinLabel, R.id.A0pinLabel, R.id.A1pinLabel, R.id.A2pinLabel, R.id.A3pinLabel, R.id.A4pinLabel, R.id.A5pinLabel};
+    int[] pinModeIds = {R.id.D2pinMode, R.id.D3pinMode, R.id.D4pinMode, R.id.D5pinMode, R.id.D6pinMode, R.id.D7pinMode, R.id.D8pinMode, R.id.D9pinMode, R.id.D10pinMode, R.id.D11pinMode, R.id.D12pinMode, R.id.D13pinMode, R.id.A0pinMode, R.id.A1pinMode, R.id.A2pinMode, R.id.A3pinMode, R.id.A4pinMode, R.id.A5pinMode};
+    int[] dropTargetIds = {R.id.D2dropTarget, R.id.D3dropTarget, R.id.D4dropTarget, R.id.D5dropTarget, R.id.D6dropTarget, R.id.D7dropTarget, R.id.D8dropTarget, R.id.D9dropTarget, R.id.D10dropTarget, R.id.D11dropTarget, R.id.D12dropTarget, R.id.D13dropTarget, R.id.A0dropTarget, R.id.A1dropTarget, R.id.A2dropTarget, R.id.A3dropTarget, R.id.A4dropTarget, R.id.A5dropTarget};
+    int[] pinContainerIds = {R.id.D2pinContainer, R.id.D3pinContainer, R.id.D4pinContainer, R.id.D5pinContainer, R.id.D6pinContainer, R.id.D7pinContainer, R.id.D8pinContainer, R.id.D9pinContainer, R.id.D10pinContainer, R.id.D11pinContainer, R.id.D12pinContainer, R.id.D13pinContainer, R.id.A0pinContainer, R.id.A1pinContainer, R.id.A2pinContainer, R.id.A3pinContainer, R.id.A4pinContainer, R.id.A5pinContainer};
+    
 	// input/output
 	private InputStream inStream = null;
 	private OutputStream outStream = null;
@@ -134,21 +153,30 @@ public class MainActivity extends Activity implements OnClickListener {
          LinearLayout pinControl;
          TextView pinNameTemp;
          ArrayAdapter<CharSequence> adapter;
-         
-         for (int i=0; i<numPins; i++) {
+    	 
+    	 String dropTargetIdString="vals: ";
+    	 for (int i=0;i<dropTargetIds.length;i++) {
+    		 dropTargetIdString += dropTargetIds[i] + " ";
+    	 }
+    	 Log.d("ids", dropTargetIdString);
+    	 
+    	 for (int i=0; i<numPins; i++) {
+        	 
         	 inflater = (LayoutInflater)getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         	 pinControl = (LinearLayout) inflater.inflate(R.layout.pin_control, main);
+        	 pinControl.setId(pinContainerIds[i]);
              pinNameTemp = (TextView)pinControl.findViewById(R.id.pin_name);
-             pinNameTemp.setId(i);
+             pinNameTemp.setId(pinIds[i]);
              pinNameTemp.setText(pinName[i]);
+             
              pinVal[i] = (EditText)pinControl.findViewById(R.id.val);
-             pinVal[i].setId(i);
+             pinVal[i].setId(pinValIds[i]);
              pinLabel[i] = (EditText)pinControl.findViewById(R.id.name);
-             pinLabel[i].setId(i);
+             pinLabel[i].setId(pinLabelIds[i]);
              pinMode[i] = (Spinner)pinControl.findViewById(R.id.mode);
-             pinMode[i].setId(i);
+             pinMode[i].setId(pinModeIds[i]);
              dropTarget[i] = (LinearLayout)pinControl.findViewById(R.id.drop_target);
-             dropTarget[i].setId(i);
+             dropTarget[i].setId(dropTargetIds[i]);
              
              // add the adapter to the Spinner
              // Create an ArrayAdapter using the string array and a default spinner layout
@@ -161,8 +189,8 @@ public class MainActivity extends Activity implements OnClickListener {
              pinMode[i].setAdapter(adapter);
 
              // add the drag-and-drop functionality
-    	     Drawable enterShape = getResources().getDrawable(R.drawable.target_hover);
-    	     Drawable normalShape = getResources().getDrawable(R.drawable.target);
+    	     Drawable enterShape = ContextCompat.getDrawable(this, R.drawable.target_hover);
+    	     Drawable normalShape = ContextCompat.getDrawable(this, R.drawable.target);
     	     dropTarget[i].setOnDragListener(new TargetOnDragListener(this, enterShape, normalShape, pinMode[i], pinLabel[i]));
          }
          
@@ -177,34 +205,25 @@ public class MainActivity extends Activity implements OnClickListener {
          // check if BT adapter is enabled and working
          checkBt();
          
-         // TODO update with parts
-         
 	     // Assign the touch listener to your view which you want to move
-	     findViewById(R.id.led).setOnTouchListener(new OnPartTouchListener(this, R.id.led));
-	     findViewById(R.id.pot).setOnTouchListener(new OnPartTouchListener(this, R.id.pot));
-	     findViewById(R.id.button).setOnTouchListener(new OnPartTouchListener(this, R.id.button));
-	     findViewById(R.id.spst).setOnTouchListener(new OnPartTouchListener(this, R.id.spst));
-	     findViewById(R.id.photo).setOnTouchListener(new OnPartTouchListener(this, R.id.photo));
-	     findViewById(R.id.servo).setOnTouchListener(new OnPartTouchListener(this, R.id.servo));
+         for (int i=0; i<partIds.length; i++) {
+        	 findViewById(partIds[i]).setOnTouchListener(new OnPartTouchListener(this, partIds[i]));
+         }
 	     
-	     Drawable normalShape = getResources().getDrawable(R.drawable.target);
-	     Drawable enterTrash = getResources().getDrawable(R.drawable.trash_hover);
-	     Drawable normalTrash = getResources().getDrawable(R.drawable.trash);
-	     findViewById(R.id.ledSource).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
-	     findViewById(R.id.potSource).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
-	     findViewById(R.id.buttonSource).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
-	     findViewById(R.id.spstSource).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
-	     findViewById(R.id.photoSource).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
-	     findViewById(R.id.servoSource).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
+	     Drawable normalShape = ContextCompat.getDrawable(this, R.drawable.target);
+	     Drawable enterTrash = ContextCompat.getDrawable(this, R.drawable.trash_hover);
+	     Drawable normalTrash = ContextCompat.getDrawable(this, R.drawable.trash);
+	     
+	     for (int i=0; i<sourceIds.length; i++) {
+	    	 findViewById(sourceIds[i]).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
+	     }
 	     findViewById(R.id.trash).setOnDragListener(new TargetOnDragListener(this, enterTrash, normalTrash));
 	     
-	     // TODO NEW BT
 	     btDeviceAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
 	 	 btDeviceAddresses = new ArrayList<String>();
 	 	// Register the BroadcastReceiver
 	 	IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
-	 	// END NEW
          
     }
  
@@ -468,7 +487,7 @@ class DigitalModes extends ArrayAdapter<CharSequence> {
 
 	static Resources resources;
 	static CharSequence[] strings;
-	static Context context;
+	Context context;
 	
 	public DigitalModes(Context context, int textViewResId, CharSequence[] strings) {
         super(context, textViewResId, strings);
@@ -507,7 +526,6 @@ class DigitalModes extends ArrayAdapter<CharSequence> {
     }  
 
     public boolean isEnabled(int position) {
-        // return false if position == position you want to disable
     	// disable analogRead (mode 3)
     	if (position == 3) return false;
     	return true;
@@ -518,7 +536,7 @@ class AnalogModes extends ArrayAdapter<CharSequence> {
 
 	static Resources resources;
 	static CharSequence[] strings;
-	static Context context;
+	Context context;
 	
 	public AnalogModes(
             Context context, int textViewResId, CharSequence[] strings) {
@@ -591,7 +609,6 @@ class TargetOnDragListener implements OnDragListener {
     
     @Override
     public boolean onDrag(View v, DragEvent event) {
-      int action = event.getAction();
       switch (event.getAction()) {
       case DragEvent.ACTION_DRAG_STARTED:
       // do nothing
@@ -603,10 +620,32 @@ class TargetOnDragListener implements OnDragListener {
         v.setBackground(normalShape);
         break;
       case DragEvent.ACTION_DROP:   
+    	  
+          
+	    View partIconView = (View)event.getLocalState();
+	    ViewGroup owner = (ViewGroup) partIconView.getParent();
+	    
+	    if (!isSourceId(owner.getId())) {
+	    	// find the pin from which it was dragged-- Arrays.asList(x).indexOf(y) doesn't work
+	    	int ownerIndex = owner.getId();
+	    	for (int i=0; i<main.dropTargetIds.length; i++) {
+	    		if (main.dropTargetIds[i] == ownerIndex) {
+	    			ownerIndex = i;
+	    			break;
+	    		}
+	    	}
+	    	
+	    	// set the pin from which it was dragged to not having anything
+	    	main.pinMode[ownerIndex].setSelection(0, true);
+	      	main.pinLabel[ownerIndex].setText("");
+        	owner.removeView(partIconView);
+        }
+          
         if (!isSourceId(v.getId()))  {
-        	// add new part to the dropped group
+
+    	    // add new part to the dropped group
 	    	ImageView partIcon = new ImageView(pinMode.getContext());
-	    	LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.FILL_PARENT, LinearLayout.LayoutParams.FILL_PARENT);
+	    	LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
 	        partIcon.setLayoutParams(params);
 	        
 	        Drawable partDrawable = null;
@@ -614,72 +653,30 @@ class TargetOnDragListener implements OnDragListener {
 	        String label = "";
 	        int partId = 0;
 	        
-	    	// TODO update with parts
-	        if (main.selectedPart == R.id.led) {
-	    		partDrawable = pinMode.getContext().getResources().getDrawable(R.drawable.led_on);
-	    		mode = 2;
-		        label = "LED";
-		        partId = R.id.led;
-	    	}
-	    	else if (main.selectedPart == R.id.pot) {
-	    		partDrawable = pinMode.getContext().getResources().getDrawable(R.drawable.pot);
-	    		mode = 3;
-		        label = "Potentiometer";
-		        partId = R.id.pot;
-	    	}
-	    	else if (main.selectedPart == R.id.button) {
-	    		partDrawable = pinMode.getContext().getResources().getDrawable(R.drawable.button);
-	    		mode = 5;
-		        label = "Button";
-		        partId = R.id.button;
-	    	}
-	    	else if (main.selectedPart == R.id.spst) {
-	    		partDrawable = pinMode.getContext().getResources().getDrawable(R.drawable.spst);
-	    		mode = 1;
-		        label = "Switch";
-		        partId = R.id.spst;
-	    	}
-	    	else if (main.selectedPart == R.id.photo) {
-	    		partDrawable = pinMode.getContext().getResources().getDrawable(R.drawable.photo);
-	    		mode = 3;
-		        label = "Photoresistor";
-		        partId = R.id.photo;
-	    	}
-	    	else if (main.selectedPart == R.id.servo) {
-	    		partDrawable = pinMode.getContext().getResources().getDrawable(R.drawable.servo);
-	    		mode = 4;
-		        label = "Servo";
-		        partId = R.id.servo;
-	    	}
-	        
+	        for (int i=0; i<main.partIds.length; i++) {
+	        	
+	        	if (main.selectedPart == main.partIds[i]) {
+		    		partDrawable = ContextCompat.getDrawable(pinMode.getContext(), main.partDrawables[i]);
+		    		mode = main.partModes[i];
+			        label = main.partLabels[i];
+			        partId = main.partIds[i];
+		    	}
+	        }
+	    	
 	        partIcon.setImageDrawable(partDrawable);
 	        partIcon.setPadding(5,  5,  5,  5);
 	        partIcon.setOnTouchListener(new OnPartTouchListener(main, partId));
 	          
 	        // Dropped, reassign View to ViewGroup
-	        View view = (View) partIcon;
 	        LinearLayout container = (LinearLayout) v;
 	        if (container.getChildCount() > 0) container.removeAllViews();
-	        container.addView(view);
-	        view.setVisibility(View.VISIBLE);
+	        container.addView(partIcon);
+	        partIcon.setVisibility(View.VISIBLE);
 	    
 	        // set the pin to having an LED
 	        if (pinMode != null) {
 	        	pinMode.setSelection(mode, true);
 	        	pinLabel.setText(label);
-	        }
-        }
-        else {
-        	// remove part from original spot, if the original spot was a pin
-	        View view = (View)event.getLocalState();
-	        ViewGroup owner = (ViewGroup) view.getParent();
-	        if (!isSourceId(owner.getId())) {
-	        	owner.removeView(view);
-	        	// set the pin to not having anything
-	            if (pinMode != null) {
-	            	pinMode.setSelection(0, true);
-	            	pinLabel.setText("");
-	            }
 	        }
         }
 
