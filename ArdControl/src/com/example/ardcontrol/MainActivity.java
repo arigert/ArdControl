@@ -12,13 +12,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 
-import com.example.ardcontrol.R;
-
 import android.app.Activity;
 import android.app.ProgressDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
@@ -68,7 +65,6 @@ public class MainActivity extends Activity implements OnClickListener {
 	// BT stuff
 	private BluetoothAdapter mBluetoothAdapter = null;
 	private BluetoothSocket btSocket = null;
-	private String btDeviceAddress = null;
 	private BluetoothDevice btDevice = null;
 	private ListView btDeviceList;
 	private ArrayAdapter<String> btDeviceAdapter = null;
@@ -149,14 +145,16 @@ public class MainActivity extends Activity implements OnClickListener {
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			String action = intent.getAction();
-			BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 
 			if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-				btDevice = mBluetoothAdapter.getRemoteDevice(btDeviceAddress);
+				btDevice = mBluetoothAdapter.getRemoteDevice(btDevice.getAddress());
+				Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
 			}
 			else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-				if(btDeviceAddress != null)
-					connectDevice(btDeviceAddress);
+				if (btDevice != null) {
+					Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
+					connectWithProgressDialog(btDevice.getAddress());
+				}
 			}
 		}
 	};
@@ -220,7 +218,6 @@ public class MainActivity extends Activity implements OnClickListener {
     	     dropTarget[i].setOnDragListener(new TargetOnDragListener(this, enterShape, normalShape, pinMode[i], pinLabel[i]));
          }
 
-
          // get our GUI items
          connect = (Button) findViewById(R.id.connect);
          btDeviceList = (ListView) findViewById(R.id.btDeviceList);
@@ -252,8 +249,6 @@ public class MainActivity extends Activity implements OnClickListener {
 	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
 
     }
-
-
 
     // what to do if a view is clicked
 	@Override
@@ -305,8 +300,6 @@ public class MainActivity extends Activity implements OnClickListener {
 		}
 
 		btDevice = mBluetoothAdapter.getRemoteDevice(address);
-		btDeviceAddress = address;
-
         try {
         	// create BT socket from our device and connect to it
         	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
@@ -328,7 +321,7 @@ public class MainActivity extends Activity implements OnClickListener {
         // start listening for data
         beginListenForData();
 
-        return returnVal;
+		return returnVal;
     }
 
 
@@ -337,7 +330,7 @@ public class MainActivity extends Activity implements OnClickListener {
 		// delete anything already found so we don't get duplicates
 		btDeviceAdapter.clear();
 		btDeviceAddresses.clear();
-
+		btDeviceList.setVisibility(View.VISIBLE);
 		// start discovering devices
 		mBluetoothAdapter.startDiscovery();
 
@@ -346,39 +339,7 @@ public class MainActivity extends Activity implements OnClickListener {
 			@Override
 			public void onItemClick(AdapterView<?> arg0, View arg1, int position, long arg3) {
 				final int pos = position;
-
-
-				new Thread(new Runnable() {
-
-					public void run() {
-						runOnUiThread(new Runnable() {
-							public void run() {
-								progress = ProgressDialog.show(MainActivity.this, "Connecting", "Connecting to " + btDeviceList.getItemAtPosition(pos).toString(), true);
-								progress.setCancelable(true);
-							}
-						});
-
-						btDeviceAddress = btDeviceAddresses.get(pos);
-						final boolean success = connectDevice(btDeviceAddress);
-
-						runOnUiThread(new Runnable() {
-							public void run() {
-								progress.dismiss();
-
-								if (success) {
-									Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
-
-									// hide list of devices
-									btDeviceList.setVisibility(View.GONE);
-								} else {
-									Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
-								}
-							}
-						});
-					}
-
-				}).start();
-
+				connectWithProgressDialog(btDeviceAddresses.get(pos));
 			}
 		});
 
@@ -404,6 +365,39 @@ public class MainActivity extends Activity implements OnClickListener {
 	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
     }
 
+	protected void connectWithProgressDialog(String address) {
+		final BluetoothDevice newDevice = mBluetoothAdapter.getRemoteDevice(address);
+		new Thread(new Runnable() {
+
+			public void run() {
+				runOnUiThread(new Runnable() {
+					public void run() {
+						progress = ProgressDialog.show(MainActivity.this, "Connecting", "Connecting to " + newDevice.toString(), true);
+						progress.setCancelable(true);
+					}
+				});
+
+				final boolean success = connectDevice(newDevice.getAddress());
+
+				runOnUiThread(new Runnable() {
+					public void run() {
+						progress.dismiss();
+
+						if (success) {
+							Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
+
+							// hide list of devices
+							if (btDeviceList.getVisibility() != View.GONE)
+								btDeviceList.setVisibility(View.GONE);
+						} else {
+							Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
+						}
+					}
+				});
+			}
+		}).start();
+	}
+
     // send data to Arduino
 	private void sendData(int currPin) {
         // get output stream
@@ -427,6 +421,7 @@ public class MainActivity extends Activity implements OnClickListener {
         	Log.d(TAG, "Bug while sending stuff", e);
         }
     }
+
 
     // do this when closed...
 	@Override
