@@ -13,11 +13,12 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 
 import com.example.ardcontrol.R;
- 
+
 import android.app.Activity;
 import android.app.ProgressDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.ClipData;
@@ -52,9 +53,9 @@ import android.widget.LinearLayout;
 import android.widget.Spinner;
 import android.widget.Toast;
 import android.widget.TextView;
- 
+
 public class MainActivity extends Activity implements OnClickListener {
- 
+
 	// GUI elements
 	Button connect;
 	String pinName[] = {"D2","D3","D4","D5","D6","D7","D8","D9","D10","D11","D12","D13","A0","A1","A2","A3","A4","A5"};
@@ -63,24 +64,28 @@ public class MainActivity extends Activity implements OnClickListener {
 	EditText pinLabel[] = new EditText[numPins];
 	Spinner pinMode[] = new Spinner[numPins];
 	LinearLayout dropTarget[] = new LinearLayout[numPins];
-		   
+
 	// BT stuff
 	private BluetoothAdapter mBluetoothAdapter = null;
 	private BluetoothSocket btSocket = null;
-	ListView btDeviceList;
-	ArrayAdapter<String> btDeviceAdapter = null;
-	ArrayList<String> btDeviceAddresses = null;
-	BroadcastReceiver mReceiver = null;
-	ProgressDialog progress = null;
-	
+	private String btDeviceAddress = null;
+	private BluetoothDevice btDevice = null;
+	private ListView btDeviceList;
+	private ArrayAdapter<String> btDeviceAdapter = null;
+	private ArrayList<String> btDeviceAddresses = null;
+	private BroadcastReceiver mReceiver = null;
+	private ProgressDialog progress = null;
+
 	// available parts list
 	// TODO insert parts here
     int[] partIds = {R.id.led, R.id.pot, R.id.button, R.id.spst, R.id.photo, R.id.servo};
     int[] sourceIds = {R.id.ledSource, R.id.potSource, R.id.buttonSource, R.id.spstSource, R.id.photoSource, R.id.servoSource};
     int[] partDrawables = {R.drawable.led_on, R.drawable.pot, R.drawable.button, R.drawable.spst, R.drawable.photo, R.drawable.servo};
-    int[] partModes = {2, 3, 5, 1, 3, 4};
+
+    // TODO--each part should have a list of accepted modes.
+	int[] partModes = {2, 3, 5, 1, 3, 4};
     String[] partLabels = {"LED", "Potentiometer", "Button", "Switch", "Photoresistor", "Servo"};
-    
+
     // ids so we don't duplicate
     int[] pinIds = {R.id.D2pin, R.id.D3pin, R.id.D4pin, R.id.D5pin, R.id.D6pin, R.id.D7pin, R.id.D8pin, R.id.D9pin, R.id.D10pin, R.id.D11pin, R.id.D12pin, R.id.D13pin, R.id.A0pin, R.id.A1pin, R.id.A2pin, R.id.A3pin, R.id.A4pin, R.id.A5pin};
     int[] pinValIds = {R.id.D2pinVal, R.id.D3pinVal, R.id.D4pinVal, R.id.D5pinVal, R.id.D6pinVal, R.id.D7pinVal, R.id.D8pinVal, R.id.D9pinVal, R.id.D10pinVal, R.id.D11pinVal, R.id.D12pinVal, R.id.D13pinVal, R.id.A0pinVal, R.id.A1pinVal, R.id.A2pinVal, R.id.A3pinVal, R.id.A4pinVal, R.id.A5pinVal};
@@ -88,7 +93,7 @@ public class MainActivity extends Activity implements OnClickListener {
     int[] pinModeIds = {R.id.D2pinMode, R.id.D3pinMode, R.id.D4pinMode, R.id.D5pinMode, R.id.D6pinMode, R.id.D7pinMode, R.id.D8pinMode, R.id.D9pinMode, R.id.D10pinMode, R.id.D11pinMode, R.id.D12pinMode, R.id.D13pinMode, R.id.A0pinMode, R.id.A1pinMode, R.id.A2pinMode, R.id.A3pinMode, R.id.A4pinMode, R.id.A5pinMode};
     int[] dropTargetIds = {R.id.D2dropTarget, R.id.D3dropTarget, R.id.D4dropTarget, R.id.D5dropTarget, R.id.D6dropTarget, R.id.D7dropTarget, R.id.D8dropTarget, R.id.D9dropTarget, R.id.D10dropTarget, R.id.D11dropTarget, R.id.D12dropTarget, R.id.D13dropTarget, R.id.A0dropTarget, R.id.A1dropTarget, R.id.A2dropTarget, R.id.A3dropTarget, R.id.A4dropTarget, R.id.A5dropTarget};
     int[] pinContainerIds = {R.id.D2pinContainer, R.id.D3pinContainer, R.id.D4pinContainer, R.id.D5pinContainer, R.id.D6pinContainer, R.id.D7pinContainer, R.id.D8pinContainer, R.id.D9pinContainer, R.id.D10pinContainer, R.id.D11pinContainer, R.id.D12pinContainer, R.id.D13pinContainer, R.id.A0pinContainer, R.id.A1pinContainer, R.id.A2pinContainer, R.id.A3pinContainer, R.id.A4pinContainer, R.id.A5pinContainer};
-    
+
 	// input/output
 	private InputStream inStream = null;
 	private OutputStream outStream = null;
@@ -97,77 +102,99 @@ public class MainActivity extends Activity implements OnClickListener {
 	byte delimiter = 10;
 	int readBufferPosition = 0;
 	byte[] readBuffer = new byte[1024];
-		
+
 	// debug
 	private static final String TAG = "BT-Ard";
-	
+
 	// worker (thread) stuff
 	boolean stopWorker = false;
 	Handler handler = new Handler();
-	
+
 	// selected part (led, pot, etc)
 	int selectedPart = -1;
-	
+
 	// for context problems
 	Context MainActivity = this;
-	
+
 	// UI handler stuff so we don't tie up the main thread
 		Handler UIHandler = new Handler(Looper.getMainLooper()) {
 			// what the handler should do when we send it a message
 	        @Override
 	        public void handleMessage(Message inputMessage) {
 	            // get the object sent in the message and cast it to a String (because we are sending a string)
-	            String data = (String) inputMessage.obj; 
+	            String data = (String) inputMessage.obj;
 	            String[] indData = data.split("\\s");
 	            if (indData != null && indData.length >= 2) {
 	            	int pinIndex = java.util.Arrays.asList(pinName).indexOf(indData[0].trim());
 	            	if (pinIndex >= 0) {
 	            		int modeNum = pinMode[pinIndex].getSelectedItemPosition();
 	            		if (modeNum % 2 == 1) pinVal[pinIndex].setText(indData[1]);
-		            	
+
 		    	        if (pinMode[pinIndex].getSelectedItemPosition() == 0) {
 		    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.gray));
 		    	        }
 		    	        else {
-		    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.white));	        	
+		    	        	pinVal[pinIndex].setBackgroundColor(getApplicationContext().getResources().getColor(R.color.white));
 		    	        }
-		            	
+
 		            	// send a reply
 		            	sendData(pinIndex);
-		            	
+
 	            	}
 	            }
 	        }
 		};
-	
- 
-    // on app creation, do this...
+
+	private final BroadcastReceiver mReconnectReceiver = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			String action = intent.getAction();
+			BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+
+			if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+				btDevice = mBluetoothAdapter.getRemoteDevice(btDeviceAddress);
+			}
+			else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+				if(btDeviceAddress != null)
+					connectDevice(btDeviceAddress);
+			}
+		}
+	};
+
+	// on app creation, do this...
 	@Override
     protected void onCreate(Bundle savedInstanceState) {
          super.onCreate(savedInstanceState);
          setContentView(R.layout.activity_main);
-         
+
+		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED);
+		IntentFilter filter2 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
+		IntentFilter filter3 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+		this.registerReceiver(mReconnectReceiver, filter1);
+		this.registerReceiver(mReconnectReceiver, filter2);
+		this.registerReceiver(mReconnectReceiver, filter3);
+
          ViewGroup main = (ViewGroup)findViewById(R.id.main);
          LayoutInflater inflater;
          LinearLayout pinControl;
          TextView pinNameTemp;
          ArrayAdapter<CharSequence> adapter;
-    	 
+
     	 String dropTargetIdString="vals: ";
     	 for (int i=0;i<dropTargetIds.length;i++) {
     		 dropTargetIdString += dropTargetIds[i] + " ";
     	 }
     	 Log.d("ids", dropTargetIdString);
-    	 
+
     	 for (int i=0; i<numPins; i++) {
-        	 
+
         	 inflater = (LayoutInflater)getSystemService(Context.LAYOUT_INFLATER_SERVICE);
         	 pinControl = (LinearLayout) inflater.inflate(R.layout.pin_control, main);
         	 pinControl.setId(pinContainerIds[i]);
              pinNameTemp = (TextView)pinControl.findViewById(R.id.pin_name);
              pinNameTemp.setId(pinIds[i]);
              pinNameTemp.setText(pinName[i]);
-             
+
              pinVal[i] = (EditText)pinControl.findViewById(R.id.val);
              pinVal[i].setId(pinValIds[i]);
              pinLabel[i] = (EditText)pinControl.findViewById(R.id.name);
@@ -176,7 +203,7 @@ public class MainActivity extends Activity implements OnClickListener {
              pinMode[i].setId(pinModeIds[i]);
              dropTarget[i] = (LinearLayout)pinControl.findViewById(R.id.drop_target);
              dropTarget[i].setId(dropTargetIds[i]);
-             
+
              // add the adapter to the Spinner
              // Create an ArrayAdapter using the string array and a default spinner layout
              if (i < 12) adapter = DigitalModes.createFromResource(this, R.array.mode_names, android.R.layout.simple_spinner_item);
@@ -192,40 +219,42 @@ public class MainActivity extends Activity implements OnClickListener {
     	     Drawable normalShape = ContextCompat.getDrawable(this, R.drawable.target);
     	     dropTarget[i].setOnDragListener(new TargetOnDragListener(this, enterShape, normalShape, pinMode[i], pinLabel[i]));
          }
-         
-         
+
+
          // get our GUI items
          connect = (Button) findViewById(R.id.connect);
          btDeviceList = (ListView) findViewById(R.id.btDeviceList);
-         
+
          // set the click listeners for the buttons
          connect.setOnClickListener(this);
- 
+
          // check if BT adapter is enabled and working
          checkBt();
-         
+
 	     // Assign the touch listener to your view which you want to move
          for (int i=0; i<partIds.length; i++) {
         	 findViewById(partIds[i]).setOnTouchListener(new OnPartTouchListener(this, partIds[i]));
          }
-	     
+
 	     Drawable normalShape = ContextCompat.getDrawable(this, R.drawable.target);
 	     Drawable enterTrash = ContextCompat.getDrawable(this, R.drawable.trash_hover);
 	     Drawable normalTrash = ContextCompat.getDrawable(this, R.drawable.trash);
-	     
+
 	     for (int i=0; i<sourceIds.length; i++) {
 	    	 findViewById(sourceIds[i]).setOnDragListener(new TargetOnDragListener(this, normalShape, normalShape));
 	     }
 	     findViewById(R.id.trash).setOnDragListener(new TargetOnDragListener(this, enterTrash, normalTrash));
-	     
+
 	     btDeviceAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
 	 	 btDeviceAddresses = new ArrayList<String>();
 	 	// Register the BroadcastReceiver
 	 	IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
-         
+
     }
- 
+
+
+
     // what to do if a view is clicked
 	@Override
     public void onClick(View control) {
@@ -234,12 +263,12 @@ public class MainActivity extends Activity implements OnClickListener {
         	findDevices();
         }
     }
- 
+
     // check if BT adapter is working
 	private void checkBt() {
         // display an alert (Toast) if BT is disabled or null
     	mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
- 
+
         if (!mBluetoothAdapter.isEnabled()) {
             Intent turnOnIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(turnOnIntent, 0);
@@ -248,7 +277,7 @@ public class MainActivity extends Activity implements OnClickListener {
         	Toast.makeText(getApplicationContext(), "Bluetooth adapter is not available!", Toast.LENGTH_LONG).show();
         }
     }
-	
+
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		if(requestCode == 0){
 			if (mBluetoothAdapter.isEnabled()) {
@@ -259,13 +288,13 @@ public class MainActivity extends Activity implements OnClickListener {
 			}
 		}
 	}
-	
+
 	public boolean connectDevice(String address) {
 		boolean returnVal = false;
-		
+
 		// cancel BT discovery because we selected a device
 		mBluetoothAdapter.cancelDiscovery();
-		
+
 		// close any existing BT connection
 		if (btSocket != null) {
 			try {
@@ -274,14 +303,15 @@ public class MainActivity extends Activity implements OnClickListener {
 	            Log.d(TAG, "Unable to end the connection");
 	        }
 		}
-				
-		BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
-			       
+
+		btDevice = mBluetoothAdapter.getRemoteDevice(address);
+		btDeviceAddress = address;
+
         try {
         	// create BT socket from our device and connect to it
-        	btSocket = (BluetoothSocket) device.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(device,1);
+        	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
             btSocket.connect();
-                        
+
             returnVal = true;
 
         } catch (Exception e) {
@@ -291,73 +321,71 @@ public class MainActivity extends Activity implements OnClickListener {
             } catch (IOException e2) {
                 Log.d(TAG, "Unable to end the connection");
             }
-            
+
             e.printStackTrace();
         }
-       
+
         // start listening for data
         beginListenForData();
-        
+
         return returnVal;
     }
 
-       
+
     // try to find BT devices
-	public void findDevices() {		
+	public void findDevices() {
 		// delete anything already found so we don't get duplicates
 		btDeviceAdapter.clear();
 		btDeviceAddresses.clear();
-		
+
 		// start discovering devices
 		mBluetoothAdapter.startDiscovery();
-		
+
 		btDeviceList.setAdapter(btDeviceAdapter);
-		btDeviceList.setOnItemClickListener(new OnItemClickListener()
-		{		    
-		    @Override 
-		    public void onItemClick(AdapterView<?> arg0, View arg1, int position, long arg3)
-		    { 
-		    	final int pos = position;
-		    	
-		    	
-	    		new Thread(new Runnable(){
+		btDeviceList.setOnItemClickListener(new OnItemClickListener() {
+			@Override
+			public void onItemClick(AdapterView<?> arg0, View arg1, int position, long arg3) {
+				final int pos = position;
 
-                    public void run(){
-                    	runOnUiThread(new Runnable() {
-        	    			public void run() {
-        	    				progress = ProgressDialog.show(MainActivity.this, "Connecting", "Connecting to " + btDeviceList.getItemAtPosition(pos).toString(), true);
-                	    		progress.setCancelable(true);
-        	    			}
-        	    		});
-                	    		
-        	    		final boolean success = connectDevice(btDeviceAddresses.get(pos));
-                	    
-        	    		runOnUiThread(new Runnable() {
-        	    			public void run() {
-        	    				progress.dismiss();
-        	    				
-        	    				if (success) {
-		        	    			Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();	   		
-		        	        		
-		        	        		// hide list of devices
-		        	        		btDeviceList.setVisibility(View.GONE);            	    		
-		        	    		}
-		        	    		else {
-		        	    			Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();	   		
-		        	    		}
-        	    			}
-        	    		});
-                    }
 
-                }).start();
-	    			
-		    }
+				new Thread(new Runnable() {
+
+					public void run() {
+						runOnUiThread(new Runnable() {
+							public void run() {
+								progress = ProgressDialog.show(MainActivity.this, "Connecting", "Connecting to " + btDeviceList.getItemAtPosition(pos).toString(), true);
+								progress.setCancelable(true);
+							}
+						});
+
+						btDeviceAddress = btDeviceAddresses.get(pos);
+						final boolean success = connectDevice(btDeviceAddress);
+
+						runOnUiThread(new Runnable() {
+							public void run() {
+								progress.dismiss();
+
+								if (success) {
+									Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
+
+									// hide list of devices
+									btDeviceList.setVisibility(View.GONE);
+								} else {
+									Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
+								}
+							}
+						});
+					}
+
+				}).start();
+
+			}
 		});
-		
+
 		if (mReceiver != null) {
 			unregisterReceiver(mReceiver);
 		}
-		
+
 		mReceiver = new BroadcastReceiver() {
 		    public void onReceive(Context context, Intent intent) {
 		        String action = intent.getAction();
@@ -371,11 +399,11 @@ public class MainActivity extends Activity implements OnClickListener {
 		        }
 		    }
 		};
-		
+
 		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
     }
-       
+
     // send data to Arduino
 	private void sendData(int currPin) {
         // get output stream
@@ -384,7 +412,7 @@ public class MainActivity extends Activity implements OnClickListener {
         } catch (IOException e) {
             Log.d(TAG, "Bug BEFORE Sending stuff", e);
         }
- 
+
 		// send (for each pin): name, mode, value (which is 0 if mode is output)
 		// modes: 0 = off, 1 = digital input, 2 = digital output, 3 = analog input, 4 = analog output, 5 = input w/pullup
 		// we only send half of the pins, beginning with beginPinIndex
@@ -399,12 +427,12 @@ public class MainActivity extends Activity implements OnClickListener {
         	Log.d(TAG, "Bug while sending stuff", e);
         }
     }
- 
+
     // do this when closed...
 	@Override
     protected void onDestroy() {
     	super.onDestroy();
-   
+
     	if (btSocket != null) {
     		// close BT socket
     		try {
@@ -412,13 +440,13 @@ public class MainActivity extends Activity implements OnClickListener {
             } catch (IOException e) {
             }
     	}
-    	
+
     	// unregister BT receiver
     	if (mReceiver != null) {
 			unregisterReceiver(mReceiver);
 		}
     }
-       
+
     // listen for data coming from Arduino
 	public void beginListenForData()   {
     	// get input stream
@@ -428,23 +456,23 @@ public class MainActivity extends Activity implements OnClickListener {
     		inStream.skip(inStream.available());
     	} catch (IOException e) {
     	}
-             
+
     	// make a new thread to process the stuff we get
 		Thread workerThread = new Thread(new Runnable()
 		{
-    		public void run() {                
+    		public void run() {
                // while the thread is going, get data
     			while(!Thread.currentThread().isInterrupted() && !stopWorker) {
                     try {
                         // see how much is available
-                    	int bytesAvailable = inStream.available();      
-                        
+                    	int bytesAvailable = inStream.available();
+
                         // if there's anything to read...
                     	if(bytesAvailable > 0) {
                             // read it
                     		byte[] packetBytes = new byte[bytesAvailable];
                             inStream.read(packetBytes);
-                            
+
                             // put each byte back into the String format
                             for(int i=0;i<bytesAvailable;i++) {
                                 byte b = packetBytes[i];
@@ -477,7 +505,7 @@ public class MainActivity extends Activity implements OnClickListener {
                 }
             }
   		});
- 
+
         workerThread.start();
    	}
 }
@@ -487,7 +515,7 @@ class DigitalModes extends ArrayAdapter<CharSequence> {
 	static Resources resources;
 	static CharSequence[] strings;
 	Context context;
-	
+
 	public DigitalModes(Context context, int textViewResId, CharSequence[] strings) {
         super(context, textViewResId, strings);
         this.context = context;
@@ -505,7 +533,7 @@ class DigitalModes extends ArrayAdapter<CharSequence> {
     public boolean areAllItemsEnabled() {
         return false;
     }
-    
+
     @Override
     public View getDropDownView(int position, View convertView, ViewGroup parent){
     	 View v = convertView;
@@ -517,12 +545,12 @@ class DigitalModes extends ArrayAdapter<CharSequence> {
 
          TextView tv = (TextView) v.findViewById(R.id.spinnerTarget);
          tv.setText(strings[position]);
-         
+
          if (!isEnabled(position)) tv.setTextColor(context.getResources().getColor(R.color.gray));
          else tv.setTextColor(context.getResources().getColor(R.color.black));
-         
+
          return v;
-    }  
+    }
 
     public boolean isEnabled(int position) {
     	// disable analogRead (mode 3)
@@ -536,7 +564,7 @@ class AnalogModes extends ArrayAdapter<CharSequence> {
 	static Resources resources;
 	static CharSequence[] strings;
 	Context context;
-	
+
 	public AnalogModes(
             Context context, int textViewResId, CharSequence[] strings) {
         super(context, textViewResId, strings);
@@ -566,13 +594,13 @@ class AnalogModes extends ArrayAdapter<CharSequence> {
 
          TextView tv = (TextView) v.findViewById(R.id.spinnerTarget);
          tv.setText(strings[position]);
-         
+
          if (!isEnabled(position)) tv.setTextColor(context.getResources().getColor(R.color.gray));
          else tv.setTextColor(context.getResources().getColor(R.color.black));
-         
+
          return v;
-    }              
-    
+    }
+
     public boolean isEnabled(int position) {
         // return false if position == position you want to disable
     	if (position == 1 || position == 2 || position == 5) return false;
@@ -581,13 +609,13 @@ class AnalogModes extends ArrayAdapter<CharSequence> {
 }
 
 class TargetOnDragListener implements OnDragListener {
-	 
+
     Drawable enterShape;
     Drawable normalShape;
     Spinner pinMode;
     EditText pinLabel;
     MainActivity main;
-    
+
     public TargetOnDragListener(MainActivity main, Drawable enterShape, Drawable normalShape, Spinner pinMode, EditText pinLabel) {
     	super();
     	this.enterShape = enterShape;
@@ -596,7 +624,7 @@ class TargetOnDragListener implements OnDragListener {
     	this.pinLabel = pinLabel;
     	this.main = main;
     }
-    
+
     public TargetOnDragListener(MainActivity main, Drawable enterShape, Drawable normalShape) {
     	super();
     	this.enterShape = enterShape;
@@ -605,7 +633,7 @@ class TargetOnDragListener implements OnDragListener {
     	this.pinLabel = null;
     	this.main = main;
     }
-    
+
     @Override
     public boolean onDrag(View v, DragEvent event) {
       switch (event.getAction()) {
@@ -615,15 +643,15 @@ class TargetOnDragListener implements OnDragListener {
       case DragEvent.ACTION_DRAG_ENTERED:
         v.setBackground(enterShape);
         break;
-      case DragEvent.ACTION_DRAG_EXITED:        
+      case DragEvent.ACTION_DRAG_EXITED:
         v.setBackground(normalShape);
         break;
-      case DragEvent.ACTION_DROP:   
-    	  
-          
+      case DragEvent.ACTION_DROP:
+
+
 	    View partIconView = (View)event.getLocalState();
 	    ViewGroup owner = (ViewGroup) partIconView.getParent();
-	    
+
 	    if (!isSourceId(owner.getId())) {
 	    	// find the pin from which it was dragged-- Arrays.asList(x).indexOf(y) doesn't work
 	    	int ownerIndex = owner.getId();
@@ -633,27 +661,27 @@ class TargetOnDragListener implements OnDragListener {
 	    			break;
 	    		}
 	    	}
-	    	
+
 	    	// set the pin from which it was dragged to not having anything
 	    	main.pinMode[ownerIndex].setSelection(0, true);
 	      	main.pinLabel[ownerIndex].setText("");
         	owner.removeView(partIconView);
         }
-          
+
         if (!isSourceId(v.getId()))  {
 
     	    // add new part to the dropped group
 	    	ImageView partIcon = new ImageView(pinMode.getContext());
 	    	LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT);
 	        partIcon.setLayoutParams(params);
-	        
+
 	        Drawable partDrawable = null;
 	        int mode = 0;
 	        String label = "";
 	        int partId = 0;
-	        
+
 	        for (int i=0; i<main.partIds.length; i++) {
-	        	
+
 	        	if (main.selectedPart == main.partIds[i]) {
 		    		partDrawable = ContextCompat.getDrawable(pinMode.getContext(), main.partDrawables[i]);
 		    		mode = main.partModes[i];
@@ -661,17 +689,17 @@ class TargetOnDragListener implements OnDragListener {
 			        partId = main.partIds[i];
 		    	}
 	        }
-	    	
+
 	        partIcon.setImageDrawable(partDrawable);
 	        partIcon.setPadding(5,  5,  5,  5);
 	        partIcon.setOnTouchListener(new OnPartTouchListener(main, partId));
-	          
+
 	        // Dropped, reassign View to ViewGroup
 	        LinearLayout container = (LinearLayout) v;
 	        if (container.getChildCount() > 0) container.removeAllViews();
 	        container.addView(partIcon);
 	        partIcon.setVisibility(View.VISIBLE);
-	    
+
 	        // set the pin to having an LED
 	        if (pinMode != null) {
 	        	pinMode.setSelection(mode, true);
@@ -687,7 +715,7 @@ class TargetOnDragListener implements OnDragListener {
       }
       return true;
     }
-	
+
 	public boolean isSourceId(int id) {
 		switch(id) {
 			case R.id.ledSource:
@@ -707,21 +735,21 @@ class TargetOnDragListener implements OnDragListener {
 class OnPartTouchListener implements OnTouchListener {
 	MainActivity main;
 	int partId;
-	
+
 	public OnPartTouchListener(MainActivity main, int partId) {
 		super();
 		this.main = main;
 		this.partId = partId;
 	}
-	
+
 	public boolean onTouch(View view, MotionEvent motionEvent) {
       if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
         ClipData data = ClipData.newPlainText("", "");
         DragShadowBuilder shadowBuilder = new View.DragShadowBuilder(view);
         view.startDrag(data, shadowBuilder, view, 0);
         main.selectedPart = partId;
-        
-      } 
+
+      }
       else if (motionEvent.getAction() == MotionEvent.ACTION_UP) {
      	 view.setVisibility(View.VISIBLE);
       }
