@@ -55,6 +55,7 @@ public class MainActivity extends Activity implements OnClickListener {
 
 	// GUI elements
 	Button connect;
+	Button disconnect;
 	String pinName[] = {"D2","D3","D4","D5","D6","D7","D8","D9","D10","D11","D12","D13","A0","A1","A2","A3","A4","A5"};
 	int numPins = 18;
 	EditText pinVal[] = new EditText[numPins];
@@ -69,7 +70,7 @@ public class MainActivity extends Activity implements OnClickListener {
 	private ListView btDeviceList;
 	private ArrayAdapter<String> btDeviceAdapter = null;
 	private ArrayList<String> btDeviceAddresses = null;
-	private BroadcastReceiver mReceiver = null;
+	private BroadcastReceiver mFindDevicesReceiver = null;
 	private ProgressDialog progress = null;
 
 	// available parts list
@@ -141,13 +142,12 @@ public class MainActivity extends Activity implements OnClickListener {
 	        }
 		};
 
-	private final BroadcastReceiver mReconnectReceiver = new BroadcastReceiver() {
+	private final BroadcastReceiver mReconnectDevicesReceiver = new BroadcastReceiver() {
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			String action = intent.getAction();
 
 			if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-				btDevice = mBluetoothAdapter.getRemoteDevice(btDevice.getAddress());
 				Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
 			}
 			else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
@@ -168,9 +168,9 @@ public class MainActivity extends Activity implements OnClickListener {
 		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED);
 		IntentFilter filter2 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
 		IntentFilter filter3 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
-		this.registerReceiver(mReconnectReceiver, filter1);
-		this.registerReceiver(mReconnectReceiver, filter2);
-		this.registerReceiver(mReconnectReceiver, filter3);
+		this.registerReceiver(mReconnectDevicesReceiver, filter1);
+		this.registerReceiver(mReconnectDevicesReceiver, filter2);
+		this.registerReceiver(mReconnectDevicesReceiver, filter3);
 
          ViewGroup main = (ViewGroup)findViewById(R.id.main);
          LayoutInflater inflater;
@@ -220,10 +220,12 @@ public class MainActivity extends Activity implements OnClickListener {
 
          // get our GUI items
          connect = (Button) findViewById(R.id.connect);
+		 disconnect = (Button) findViewById(R.id.disconnect);
          btDeviceList = (ListView) findViewById(R.id.btDeviceList);
 
          // set the click listeners for the buttons
          connect.setOnClickListener(this);
+		 disconnect.setOnClickListener(this);
 
          // check if BT adapter is enabled and working
          checkBt();
@@ -246,7 +248,7 @@ public class MainActivity extends Activity implements OnClickListener {
 	 	 btDeviceAddresses = new ArrayList<String>();
 	 	// Register the BroadcastReceiver
 	 	IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
+	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
 
     }
 
@@ -254,9 +256,14 @@ public class MainActivity extends Activity implements OnClickListener {
 	@Override
     public void onClick(View control) {
         // if Connect button is clicked, connect with BT
-		if (control.getId() == R.id.connect) {
-        	findDevices();
-        }
+		switch(control.getId()) {
+			case R.id.connect:
+				findDevices();
+				break;
+			case R.id.disconnect:
+				disconnectDevice();
+				break;
+		}
     }
 
     // check if BT adapter is working
@@ -343,11 +350,12 @@ public class MainActivity extends Activity implements OnClickListener {
 			}
 		});
 
-		if (mReceiver != null) {
-			unregisterReceiver(mReceiver);
+		// Do we really have to re-register receiver every time we query for devices?
+		if (mFindDevicesReceiver != null) {
+			unregisterReceiver(mFindDevicesReceiver);
 		}
 
-		mReceiver = new BroadcastReceiver() {
+		mFindDevicesReceiver = new BroadcastReceiver() {
 		    public void onReceive(Context context, Intent intent) {
 		        String action = intent.getAction();
 		        // When discovery finds a device
@@ -362,7 +370,7 @@ public class MainActivity extends Activity implements OnClickListener {
 		};
 
 		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-	 	registerReceiver(mReceiver, filter); // Don't forget to unregister during onDestroy
+	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
     }
 
 	protected void connectWithProgressDialog(String address) {
@@ -422,25 +430,41 @@ public class MainActivity extends Activity implements OnClickListener {
         }
     }
 
-
     // do this when closed...
 	@Override
     protected void onDestroy() {
     	super.onDestroy();
+		disconnectDevice();
 
-    	if (btSocket != null) {
-    		// close BT socket
-    		try {
-        		btSocket.close();
-            } catch (IOException e) {
-            }
-    	}
-
-    	// unregister BT receiver
-    	if (mReceiver != null) {
-			unregisterReceiver(mReceiver);
+		// unregister BT receiver
+		if (mFindDevicesReceiver != null) {
+			unregisterReceiver(mFindDevicesReceiver);
 		}
     }
+
+	protected void disconnectDevice() {
+		if (btSocket != null) {
+			// close BT socket
+			try {
+				if (inStream != null) {
+					inStream.close();
+					inStream = null;
+				}
+
+				if (outStream != null) {
+					outStream.close();
+					outStream = null;
+				}
+
+				if (btSocket != null) {
+					btSocket.close();
+					btSocket = null;
+				}
+				btDevice = null;
+			} catch (IOException e) {
+			}
+		}
+	}
 
     // listen for data coming from Arduino
 	public void beginListenForData()   {
