@@ -258,6 +258,7 @@ public class MainActivity extends Activity implements OnClickListener {
         // if Connect button is clicked, connect with BT
 		switch(control.getId()) {
 			case R.id.connect:
+				Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_LONG).show();
 				findDevices();
 				break;
 			case R.id.disconnect:
