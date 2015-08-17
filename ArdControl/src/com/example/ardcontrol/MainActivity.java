@@ -227,6 +227,30 @@ public class MainActivity extends Activity implements OnClickListener {
 	 	// Register the BroadcastReceiver
 	 	IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
+
+		mReconnectDevicesReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				String action = intent.getAction();
+
+				if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+					Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
+					lastBtDevice = btDevice;
+				}
+				else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+					if (lastBtDevice == null) return;
+					int state = mBluetoothAdapter.getState();
+					if(lastBtDevice.equals(btDevice) && state == 12) {
+						Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
+						connectWithProgressDialog(btDevice.getAddress());
+					}
+				}
+			}
+		};
+
+		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+		filter1.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+		registerReceiver(mReconnectDevicesReceiver, filter1);
 	}
 
     // what to do if a view is clicked
@@ -235,10 +259,10 @@ public class MainActivity extends Activity implements OnClickListener {
         // if Connect button is clicked, connect with BT
 		switch(control.getId()) {
 			case R.id.connect:
-				Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_LONG).show();
 				findDevices();
 				break;
 			case R.id.disconnect:
+				Toast.makeText(MainActivity, "Disconnecting device.", Toast.LENGTH_LONG).show();
 				disconnectDevice();
 				break;
 		}
@@ -274,7 +298,8 @@ public class MainActivity extends Activity implements OnClickListener {
 		boolean returnVal = false;
 
 		// cancel BT discovery because we selected a device
-		mBluetoothAdapter.cancelDiscovery();
+		if(mBluetoothAdapter.isDiscovering())
+			mBluetoothAdapter.cancelDiscovery();
 
 		// close any existing BT connection
 		if (btSocket != null) {
@@ -289,11 +314,10 @@ public class MainActivity extends Activity implements OnClickListener {
 
         try {
         	// create BT socket from our device and connect to it
-        	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
+	       	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
             btSocket.connect();
 
-            returnVal = true;
-
+			returnVal = true;
         } catch (Exception e) {
             // if there's a problem, close the socket
         	try {
@@ -305,40 +329,19 @@ public class MainActivity extends Activity implements OnClickListener {
             e.printStackTrace();
         }
 
-		if (mReconnectDevicesReceiver != null)
-			unregisterReceiver(mReconnectDevicesReceiver);
-
-		mReconnectDevicesReceiver = new BroadcastReceiver() {
-			@Override
-			public void onReceive(Context context, Intent intent) {
-				String action = intent.getAction();
-
-				if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-					Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
-				}
-				else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-					if (lastBtDevice == btDevice) {
-						Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
-						connectWithProgressDialog(btDevice.getAddress());
-						lastBtDevice = btDevice;
-					}
-				}
-			}
-		};
-
-		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED);
-		IntentFilter filter2 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
-		IntentFilter filter3 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
-		registerReceiver(mReconnectDevicesReceiver, filter1);
-		registerReceiver(mReconnectDevicesReceiver, filter2);
-		registerReceiver(mReconnectDevicesReceiver, filter3);
-
 		return returnVal;
     }
 
 
     // try to find BT devices
 	public void findDevices() {
+		if (btSocket != null && btSocket.isConnected()) {
+			Toast.makeText(MainActivity, "Please disconnect device first.", Toast.LENGTH_SHORT).show();
+			return;
+		}
+
+		Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_LONG).show();
+
 		// delete anything already found so we don't get duplicates
 		btDeviceAdapter.clear();
 		btDeviceAddresses.clear();
@@ -355,7 +358,6 @@ public class MainActivity extends Activity implements OnClickListener {
 			}
 		});
 
-		// Do we really have to re-register receiver every time we query for devices?
 		if (mFindDevicesReceiver != null) {
 			unregisterReceiver(mFindDevicesReceiver);
 		}
@@ -372,20 +374,17 @@ public class MainActivity extends Activity implements OnClickListener {
 		            btDeviceAddresses.add(newDevice.getAddress());
 		        }
 				else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
-					Toast.makeText(MainActivity, "Scanning Complete.", Toast.LENGTH_SHORT).show();
-
+					Toast.makeText(MainActivity, "Scan Complete.", Toast.LENGTH_SHORT).show();
 				}
 		    }
 		};
 
-		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-		IntentFilter filter2 = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
-		registerReceiver(mFindDevicesReceiver, filter1); // Don't forget to unregister during onDestroy
-		registerReceiver(mFindDevicesReceiver, filter2); // Don't forget to unregister during onDestroy
+		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+		filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+		registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
 	}
 
 	protected void connectWithProgressDialog(String address) {
-
 		final BluetoothDevice newDevice = mBluetoothAdapter.getRemoteDevice(address);
 		new Thread(new Runnable() {
 
@@ -399,22 +398,19 @@ public class MainActivity extends Activity implements OnClickListener {
 
 				final boolean success = connectDevice(newDevice.getAddress());
 
-				if (success)
+				if (success) {
 					beginListenForData();
+				}
 
 				runOnUiThread(new Runnable() {
 					public void run() {
 						progress.dismiss();
 
-						if (success) {
-							Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
-
-							// hide list of devices
-							if (btDeviceList.getVisibility() != View.GONE)
-								btDeviceList.setVisibility(View.GONE);
-						} else {
-							Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
-						}
+					// hide list of devices
+					if (btDeviceList.getVisibility() != View.GONE)
+						btDeviceList.setVisibility(View.GONE);
+					if (!success)
+						Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
 					}
 				});
 			}
@@ -449,42 +445,40 @@ public class MainActivity extends Activity implements OnClickListener {
 	@Override
     protected void onDestroy() {
 		super.onDestroy();
-		disconnectDevice();
+	 	disconnectDevice();
 
 		// unregister BT receiver
 		if (mFindDevicesReceiver != null) {
 			unregisterReceiver(mFindDevicesReceiver);
+			mFindDevicesReceiver = null;
+		}
+		if (mReconnectDevicesReceiver != null) {
+			unregisterReceiver(mFindDevicesReceiver);
+			mReconnectDevicesReceiver = null;
 		}
     }
 
 	protected void disconnectDevice() {
-		if (btSocket != null) {
+
 			// close BT socket
-			try {
-				if (inStream != null) {
-					inStream.close();
-					inStream = null;
-				}
-
-				if (outStream != null) {
-					outStream.close();
-					outStream = null;
-				}
-
-				if (btSocket != null) {
-					btSocket.close();
-					btSocket = null;
-				}
-				btDevice = null;
-
-				if (mReconnectDevicesReceiver != null) {
-					unregisterReceiver(mReconnectDevicesReceiver);
-					mReconnectDevicesReceiver = null;
-				}
-				lastBtDevice = btDevice;
-
-			} catch (IOException e) {
+		try {
+			if (inStream != null) {
+				inStream.close();
+				inStream = null;
 			}
+
+			if (outStream != null) {
+				outStream.close();
+				outStream = null;
+			}
+
+			if (btSocket != null) {
+				btSocket.close();
+				btSocket = null;
+			}
+			btDevice = null;
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 
@@ -541,7 +535,7 @@ public class MainActivity extends Activity implements OnClickListener {
                             }
                         }
                     }
-                    catch (IOException ex)
+                    catch (Exception ex)
                     {
                         stopWorker = true;
                     }
