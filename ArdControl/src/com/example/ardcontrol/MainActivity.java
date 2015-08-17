@@ -67,10 +67,12 @@ public class MainActivity extends Activity implements OnClickListener {
 	private BluetoothAdapter mBluetoothAdapter = null;
 	private BluetoothSocket btSocket = null;
 	private BluetoothDevice btDevice = null;
+	private BluetoothDevice lastBtDevice = null;
 	private ListView btDeviceList;
 	private ArrayAdapter<String> btDeviceAdapter = null;
 	private ArrayList<String> btDeviceAddresses = null;
 	private BroadcastReceiver mFindDevicesReceiver = null;
+	private BroadcastReceiver mReconnectDevicesReceiver = null;
 	private ProgressDialog progress = null;
 
 	// available parts list
@@ -142,35 +144,11 @@ public class MainActivity extends Activity implements OnClickListener {
 	        }
 		};
 
-	private final BroadcastReceiver mReconnectDevicesReceiver = new BroadcastReceiver() {
-		@Override
-		public void onReceive(Context context, Intent intent) {
-			String action = intent.getAction();
-
-			if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-				Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
-			}
-			else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-				if (btDevice != null) {
-					Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
-					connectWithProgressDialog(btDevice.getAddress());
-				}
-			}
-		}
-	};
-
 	// on app creation, do this...
 	@Override
     protected void onCreate(Bundle savedInstanceState) {
          super.onCreate(savedInstanceState);
          setContentView(R.layout.activity_main);
-
-		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED);
-		IntentFilter filter2 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
-		IntentFilter filter3 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
-		this.registerReceiver(mReconnectDevicesReceiver, filter1);
-		this.registerReceiver(mReconnectDevicesReceiver, filter2);
-		this.registerReceiver(mReconnectDevicesReceiver, filter3);
 
          ViewGroup main = (ViewGroup)findViewById(R.id.main);
          LayoutInflater inflater;
@@ -249,8 +227,7 @@ public class MainActivity extends Activity implements OnClickListener {
 	 	// Register the BroadcastReceiver
 	 	IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
-
-    }
+	}
 
     // what to do if a view is clicked
 	@Override
@@ -293,6 +270,7 @@ public class MainActivity extends Activity implements OnClickListener {
 	}
 
 	public boolean connectDevice(String address) {
+		disconnectDevice();
 		boolean returnVal = false;
 
 		// cancel BT discovery because we selected a device
@@ -308,6 +286,7 @@ public class MainActivity extends Activity implements OnClickListener {
 		}
 
 		btDevice = mBluetoothAdapter.getRemoteDevice(address);
+
         try {
         	// create BT socket from our device and connect to it
         	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
@@ -326,8 +305,33 @@ public class MainActivity extends Activity implements OnClickListener {
             e.printStackTrace();
         }
 
-        // start listening for data
-        beginListenForData();
+		if (mReconnectDevicesReceiver != null)
+			unregisterReceiver(mReconnectDevicesReceiver);
+
+		mReconnectDevicesReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				String action = intent.getAction();
+
+				if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+					Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
+				}
+				else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+					if (lastBtDevice == btDevice) {
+						Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
+						connectWithProgressDialog(btDevice.getAddress());
+						lastBtDevice = btDevice;
+					}
+				}
+			}
+		};
+
+		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED);
+		IntentFilter filter2 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
+		IntentFilter filter3 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+		registerReceiver(mReconnectDevicesReceiver, filter1);
+		registerReceiver(mReconnectDevicesReceiver, filter2);
+		registerReceiver(mReconnectDevicesReceiver, filter3);
 
 		return returnVal;
     }
@@ -371,10 +375,11 @@ public class MainActivity extends Activity implements OnClickListener {
 		};
 
 		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
+		registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
     }
 
 	protected void connectWithProgressDialog(String address) {
+
 		final BluetoothDevice newDevice = mBluetoothAdapter.getRemoteDevice(address);
 		new Thread(new Runnable() {
 
@@ -387,6 +392,9 @@ public class MainActivity extends Activity implements OnClickListener {
 				});
 
 				final boolean success = connectDevice(newDevice.getAddress());
+
+				if (success)
+					beginListenForData();
 
 				runOnUiThread(new Runnable() {
 					public void run() {
@@ -434,7 +442,7 @@ public class MainActivity extends Activity implements OnClickListener {
     // do this when closed...
 	@Override
     protected void onDestroy() {
-    	super.onDestroy();
+		super.onDestroy();
 		disconnectDevice();
 
 		// unregister BT receiver
@@ -462,6 +470,13 @@ public class MainActivity extends Activity implements OnClickListener {
 					btSocket = null;
 				}
 				btDevice = null;
+
+				if (mReconnectDevicesReceiver != null) {
+					unregisterReceiver(mReconnectDevicesReceiver);
+					mReconnectDevicesReceiver = null;
+				}
+				lastBtDevice = btDevice;
+
 			} catch (IOException e) {
 			}
 		}
@@ -471,11 +486,13 @@ public class MainActivity extends Activity implements OnClickListener {
 	public void beginListenForData()   {
     	// get input stream
 		try {
-    		inStream = btSocket.getInputStream();
-    		// skip what's already there in case there's a pileup
-    		inStream.skip(inStream.available());
-    	} catch (IOException e) {
-    	}
+			inStream = btSocket.getInputStream();
+
+			// skip what's already there in case there's a pileup
+			inStream.skip(inStream.available());
+    	} catch (IOException ex) {
+			Log.d(TAG, "IO ERROR WHILE LISTENING FOR DATA.");
+		}
 
     	// make a new thread to process the stuff we get
 		Thread workerThread = new Thread(new Runnable()
@@ -523,7 +540,7 @@ public class MainActivity extends Activity implements OnClickListener {
                         stopWorker = true;
                     }
                 }
-            }
+			}
   		});
 
         workerThread.start();
