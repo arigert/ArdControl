@@ -371,12 +371,18 @@ public class MainActivity extends Activity implements OnClickListener {
 		            btDeviceAdapter.add(newDevice.getName() + "\n" + newDevice.getAddress());
 		            btDeviceAddresses.add(newDevice.getAddress());
 		        }
+				else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+					Toast.makeText(MainActivity, "Scanning Complete.", Toast.LENGTH_SHORT).show();
+
+				}
 		    }
 		};
 
-		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-		registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
-    }
+		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+		IntentFilter filter2 = new IntentFilter(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+		registerReceiver(mFindDevicesReceiver, filter1); // Don't forget to unregister during onDestroy
+		registerReceiver(mFindDevicesReceiver, filter2); // Don't forget to unregister during onDestroy
+	}
 
 	protected void connectWithProgressDialog(String address) {
 
