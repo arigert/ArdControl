@@ -1,7 +1,44 @@
-// TODO: Progress dialog for searching for BT devices
-// Disconnect button
+/*
+Description:
+Android app that connects via Bluetooth to Arduino
+to allow the user to read from or write to the Arduino pins.
+
+One must scan for Bluetooth devices and select one to connect.
+
+Once the Arduino is connected, pins can be set (in the app)
+to Off or one of the possible modes (INPUT, OUTPUT, etc).
+
+When a pin is Off, it is neither read from nor written to.
+When a pin is in digital or analog output mode, its values are displayed
+in the app.
+When a pin is in digital or analog input mode, one may write values
+to it via a textbox in the app. 
+
+Pin mode can be set by selecting from a dropdown list
+or by dragging an icon from the row of icons above the list of pins.
+
+
+Development environment:
+Eclipse
+
+
+Libraries:
+appcompat-v7
+
+
+Other resources:
+ArdControl.ino (must be loaded onto the Arduino)
+
+
+Connecting Arduino:
+Connect HC-05 Bluetooth module to Arduino as usual (pins 0 and 1)
+Connect any other inputs or outputs (LEDs, potentiometer, switch, etc)
+as desired to any other pins.
+
+*/
+
+// TODO:
 // Better UI for BT stuff
-// Maybe remove the picture when the mode is manually set
 // Maybe disable illegal drops
 // Maybe add more modes (tone? Serial?) or items (temp sensor, tilt, RGB LED, motor, shift register)
 
@@ -41,6 +78,7 @@ import android.view.MotionEvent;
 import android.view.DragEvent;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
+import android.widget.AdapterView.OnItemSelectedListener;
 import android.widget.ListView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -67,10 +105,12 @@ public class MainActivity extends Activity implements OnClickListener {
 	private BluetoothAdapter mBluetoothAdapter = null;
 	private BluetoothSocket btSocket = null;
 	private BluetoothDevice btDevice = null;
+	private BluetoothDevice lastBtDevice = null;
 	private ListView btDeviceList;
 	private ArrayAdapter<String> btDeviceAdapter = null;
 	private ArrayList<String> btDeviceAddresses = null;
 	private BroadcastReceiver mFindDevicesReceiver = null;
+	private BroadcastReceiver mReconnectDevicesReceiver = null;
 	private ProgressDialog progress = null;
 
 	// available parts list
@@ -142,35 +182,11 @@ public class MainActivity extends Activity implements OnClickListener {
 	        }
 		};
 
-	private final BroadcastReceiver mReconnectDevicesReceiver = new BroadcastReceiver() {
-		@Override
-		public void onReceive(Context context, Intent intent) {
-			String action = intent.getAction();
-
-			if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
-				Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
-			}
-			else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
-				if (btDevice != null) {
-					Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
-					connectWithProgressDialog(btDevice.getAddress());
-				}
-			}
-		}
-	};
-
 	// on app creation, do this...
 	@Override
     protected void onCreate(Bundle savedInstanceState) {
          super.onCreate(savedInstanceState);
          setContentView(R.layout.activity_main);
-
-		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED);
-		IntentFilter filter2 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED);
-		IntentFilter filter3 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
-		this.registerReceiver(mReconnectDevicesReceiver, filter1);
-		this.registerReceiver(mReconnectDevicesReceiver, filter2);
-		this.registerReceiver(mReconnectDevicesReceiver, filter3);
 
          ViewGroup main = (ViewGroup)findViewById(R.id.main);
          LayoutInflater inflater;
@@ -211,6 +227,8 @@ public class MainActivity extends Activity implements OnClickListener {
              adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
              // Apply the adapter to the spinner
              pinMode[i].setAdapter(adapter);
+             
+             pinMode[i].setOnItemSelectedListener(new OnModeChangedListener(dropTarget[i], pinLabel[i]));
 
              // add the drag-and-drop functionality
     	     Drawable enterShape = ContextCompat.getDrawable(this, R.drawable.target_hover);
@@ -250,7 +268,30 @@ public class MainActivity extends Activity implements OnClickListener {
 	 	IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
 	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
 
-    }
+		mReconnectDevicesReceiver = new BroadcastReceiver() {
+			@Override
+			public void onReceive(Context context, Intent intent) {
+				String action = intent.getAction();
+
+				if (BluetoothDevice.ACTION_ACL_CONNECTED.equals(action)) {
+					Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
+					lastBtDevice = btDevice;
+				}
+				else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
+					if (lastBtDevice == null) return;
+					int state = mBluetoothAdapter.getState();
+					if(lastBtDevice.equals(btDevice) && state == 12) {
+						Toast.makeText(MainActivity, "Disconnected!", Toast.LENGTH_SHORT).show();
+						connectWithProgressDialog(btDevice.getAddress());
+					}
+				}
+			}
+		};
+
+		IntentFilter filter1 = new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED);
+		filter1.addAction(BluetoothDevice.ACTION_ACL_CONNECTED);
+		registerReceiver(mReconnectDevicesReceiver, filter1);
+	}
 
     // what to do if a view is clicked
 	@Override
@@ -258,10 +299,10 @@ public class MainActivity extends Activity implements OnClickListener {
         // if Connect button is clicked, connect with BT
 		switch(control.getId()) {
 			case R.id.connect:
-				Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_LONG).show();
 				findDevices();
 				break;
 			case R.id.disconnect:
+				Toast.makeText(MainActivity, "Disconnecting device.", Toast.LENGTH_LONG).show();
 				disconnectDevice();
 				break;
 		}
@@ -293,10 +334,12 @@ public class MainActivity extends Activity implements OnClickListener {
 	}
 
 	public boolean connectDevice(String address) {
+		disconnectDevice();
 		boolean returnVal = false;
 
 		// cancel BT discovery because we selected a device
-		mBluetoothAdapter.cancelDiscovery();
+		if(mBluetoothAdapter.isDiscovering())
+			mBluetoothAdapter.cancelDiscovery();
 
 		// close any existing BT connection
 		if (btSocket != null) {
@@ -308,13 +351,13 @@ public class MainActivity extends Activity implements OnClickListener {
 		}
 
 		btDevice = mBluetoothAdapter.getRemoteDevice(address);
+
         try {
         	// create BT socket from our device and connect to it
-        	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
+	       	btSocket = (BluetoothSocket) btDevice.getClass().getMethod("createRfcommSocket", new Class[] {int.class}).invoke(btDevice,1);
             btSocket.connect();
 
-            returnVal = true;
-
+			returnVal = true;
         } catch (Exception e) {
             // if there's a problem, close the socket
         	try {
@@ -326,15 +369,19 @@ public class MainActivity extends Activity implements OnClickListener {
             e.printStackTrace();
         }
 
-        // start listening for data
-        beginListenForData();
-
 		return returnVal;
     }
 
 
     // try to find BT devices
 	public void findDevices() {
+		if (btSocket != null && btSocket.isConnected()) {
+			Toast.makeText(MainActivity, "Please disconnect device first.", Toast.LENGTH_SHORT).show();
+			return;
+		}
+
+		Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_LONG).show();
+
 		// delete anything already found so we don't get duplicates
 		btDeviceAdapter.clear();
 		btDeviceAddresses.clear();
@@ -351,7 +398,6 @@ public class MainActivity extends Activity implements OnClickListener {
 			}
 		});
 
-		// Do we really have to re-register receiver every time we query for devices?
 		if (mFindDevicesReceiver != null) {
 			unregisterReceiver(mFindDevicesReceiver);
 		}
@@ -367,12 +413,16 @@ public class MainActivity extends Activity implements OnClickListener {
 		            btDeviceAdapter.add(newDevice.getName() + "\n" + newDevice.getAddress());
 		            btDeviceAddresses.add(newDevice.getAddress());
 		        }
+				else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+					Toast.makeText(MainActivity, "Scan Complete.", Toast.LENGTH_SHORT).show();
+				}
 		    }
 		};
 
 		IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-	 	registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
-    }
+		filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+		registerReceiver(mFindDevicesReceiver, filter); // Don't forget to unregister during onDestroy
+	}
 
 	protected void connectWithProgressDialog(String address) {
 		final BluetoothDevice newDevice = mBluetoothAdapter.getRemoteDevice(address);
@@ -388,19 +438,19 @@ public class MainActivity extends Activity implements OnClickListener {
 
 				final boolean success = connectDevice(newDevice.getAddress());
 
+				if (success) {
+					beginListenForData();
+				}
+
 				runOnUiThread(new Runnable() {
 					public void run() {
 						progress.dismiss();
 
-						if (success) {
-							Toast.makeText(MainActivity, "Connected!", Toast.LENGTH_SHORT).show();
-
-							// hide list of devices
-							if (btDeviceList.getVisibility() != View.GONE)
-								btDeviceList.setVisibility(View.GONE);
-						} else {
-							Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
-						}
+					// hide list of devices
+					if (btDeviceList.getVisibility() != View.GONE)
+						btDeviceList.setVisibility(View.GONE);
+					if (!success)
+						Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
 					}
 				});
 			}
@@ -434,36 +484,41 @@ public class MainActivity extends Activity implements OnClickListener {
     // do this when closed...
 	@Override
     protected void onDestroy() {
-    	super.onDestroy();
-		disconnectDevice();
+		super.onDestroy();
+	 	disconnectDevice();
 
 		// unregister BT receiver
 		if (mFindDevicesReceiver != null) {
 			unregisterReceiver(mFindDevicesReceiver);
+			mFindDevicesReceiver = null;
+		}
+		if (mReconnectDevicesReceiver != null) {
+			unregisterReceiver(mFindDevicesReceiver);
+			mReconnectDevicesReceiver = null;
 		}
     }
 
 	protected void disconnectDevice() {
-		if (btSocket != null) {
+
 			// close BT socket
-			try {
-				if (inStream != null) {
-					inStream.close();
-					inStream = null;
-				}
-
-				if (outStream != null) {
-					outStream.close();
-					outStream = null;
-				}
-
-				if (btSocket != null) {
-					btSocket.close();
-					btSocket = null;
-				}
-				btDevice = null;
-			} catch (IOException e) {
+		try {
+			if (inStream != null) {
+				inStream.close();
+				inStream = null;
 			}
+
+			if (outStream != null) {
+				outStream.close();
+				outStream = null;
+			}
+
+			if (btSocket != null) {
+				btSocket.close();
+				btSocket = null;
+			}
+			btDevice = null;
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 
@@ -471,11 +526,13 @@ public class MainActivity extends Activity implements OnClickListener {
 	public void beginListenForData()   {
     	// get input stream
 		try {
-    		inStream = btSocket.getInputStream();
-    		// skip what's already there in case there's a pileup
-    		inStream.skip(inStream.available());
-    	} catch (IOException e) {
-    	}
+			inStream = btSocket.getInputStream();
+
+			// skip what's already there in case there's a pileup
+			inStream.skip(inStream.available());
+    	} catch (IOException ex) {
+			Log.d(TAG, "IO ERROR WHILE LISTENING FOR DATA.");
+		}
 
     	// make a new thread to process the stuff we get
 		Thread workerThread = new Thread(new Runnable()
@@ -518,16 +575,40 @@ public class MainActivity extends Activity implements OnClickListener {
                             }
                         }
                     }
-                    catch (IOException ex)
+                    catch (Exception ex)
                     {
                         stopWorker = true;
                     }
                 }
-            }
+			}
   		});
 
         workerThread.start();
    	}
+}
+
+
+class OnModeChangedListener implements OnItemSelectedListener {
+    LinearLayout indDropTarget;
+	EditText indLabel;
+
+    public OnModeChangedListener(LinearLayout indDropTarget, EditText indLabel) {
+		this.indDropTarget = indDropTarget;
+		this.indLabel = indLabel;
+    }
+
+    @Override
+    public void onItemSelected(AdapterView<?> parentView, View selectedItemView, int position, long id) {
+        if (indDropTarget.getChildCount() > 0) indDropTarget.removeAllViews();
+	    indLabel.setText("");
+    }
+
+    @Override
+    public void onNothingSelected(AdapterView<?> parentView) {
+        if (indDropTarget.getChildCount() > 0) indDropTarget.removeAllViews();
+	    indLabel.setText("");
+    }
+
 }
 
 class DigitalModes extends ArrayAdapter<CharSequence> {
@@ -713,18 +794,24 @@ class TargetOnDragListener implements OnDragListener {
 	        partIcon.setImageDrawable(partDrawable);
 	        partIcon.setPadding(5,  5,  5,  5);
 	        partIcon.setOnTouchListener(new OnPartTouchListener(main, partId));
-
+	        Log.d("test", "just threw away pictures");
+	        
+	        // set the pin to having the correct item
+	        if (pinMode != null) {
+	        	// temporarily save listener
+	        	OnItemSelectedListener temp = pinMode.getOnItemSelectedListener();
+	        	pinMode.setOnItemSelectedListener(null);
+	        	pinMode.setSelection(mode, true);
+	        	pinMode.setOnItemSelectedListener(temp);
+	        	pinLabel.setText(label);
+	        }
+	        
 	        // Dropped, reassign View to ViewGroup
 	        LinearLayout container = (LinearLayout) v;
 	        if (container.getChildCount() > 0) container.removeAllViews();
 	        container.addView(partIcon);
 	        partIcon.setVisibility(View.VISIBLE);
 
-	        // set the pin to having an LED
-	        if (pinMode != null) {
-	        	pinMode.setSelection(mode, true);
-	        	pinLabel.setText(label);
-	        }
         }
 
         break;
