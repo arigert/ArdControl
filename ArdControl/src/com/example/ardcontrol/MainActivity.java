@@ -1,7 +1,46 @@
+/*
+Description:
+Android app that connects via Bluetooth to Arduino
+to allow the user to read from or write to the Arduino pins.
+
+One must scan for Bluetooth devices and select one to connect.
+
+Once the Arduino is connected, pins can be set (in the app)
+to Off or one of the possible modes (INPUT, OUTPUT, etc).
+
+When a pin is Off, it is neither read from nor written to.
+When a pin is in digital or analog output mode, its values are displayed
+in the app.
+When a pin is in digital or analog input mode, one may write values
+to it via a textbox in the app. 
+
+Pin mode can be set by selecting from a dropdown list
+or by dragging an icon from the row of icons above the list of pins.
+
+
+Development environment:
+Eclipse
+
+
+Libraries:
+appcompat-v7
+
+
+Other resources:
+ArdControl.ino (must be loaded onto the Arduino)
+
+
+Connecting Arduino:
+Connect HC-05 Bluetooth module to Arduino as usual (pins 0 and 1)
+Connect any other inputs or outputs (LEDs, potentiometer, switch, etc)
+as desired to any other pins.
+
+*/
+
 // TODO: Progress dialog for searching for BT devices
 // Disconnect button
 // Better UI for BT stuff
-// Maybe remove the picture when the mode is manually set
+// Maybe remove the picture when the morede is manually set
 // Maybe disable illegal drops
 // Maybe add more modes (tone? Serial?) or items (temp sensor, tilt, RGB LED, motor, shift register)
 
@@ -43,6 +82,7 @@ import android.view.MotionEvent;
 import android.view.DragEvent;
 import android.widget.AdapterView;
 import android.widget.AdapterView.OnItemClickListener;
+import android.widget.AdapterView.OnItemSelectedListener;
 import android.widget.ListView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -186,6 +226,8 @@ public class MainActivity extends Activity implements OnClickListener {
              adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
              // Apply the adapter to the spinner
              pinMode[i].setAdapter(adapter);
+             
+             pinMode[i].setOnItemSelectedListener(new OnModeChangedListener(dropTarget[i]));
 
              // add the drag-and-drop functionality
     	     Drawable enterShape = ContextCompat.getDrawable(this, R.drawable.target_hover);
@@ -482,6 +524,26 @@ public class MainActivity extends Activity implements OnClickListener {
    	}
 }
 
+
+class OnModeChangedListener implements OnItemSelectedListener {
+    LinearLayout indDropTarget;
+
+    public OnModeChangedListener(LinearLayout indDropTarget) {
+	this.indDropTarget = indDropTarget;
+    }
+
+    @Override
+    public void onItemSelected(AdapterView<?> parentView, View selectedItemView, int position, long id) {
+        if (indDropTarget.getChildCount() > 0) indDropTarget.removeAllViews();
+    }
+
+    @Override
+    public void onNothingSelected(AdapterView<?> parentView) {
+        if (indDropTarget.getChildCount() > 0) indDropTarget.removeAllViews();
+    }
+
+}
+
 class DigitalModes extends ArrayAdapter<CharSequence> {
 
 	static Resources resources;
@@ -665,18 +727,24 @@ class TargetOnDragListener implements OnDragListener {
 	        partIcon.setImageDrawable(partDrawable);
 	        partIcon.setPadding(5,  5,  5,  5);
 	        partIcon.setOnTouchListener(new OnPartTouchListener(main, partId));
-	          
+	        Log.d("test", "just threw away pictures");
+	        
+	        // set the pin to having the correct item
+	        if (pinMode != null) {
+	        	// temporarily save listener
+	        	OnItemSelectedListener temp = pinMode.getOnItemSelectedListener();
+	        	pinMode.setOnItemSelectedListener(null);
+	        	pinMode.setSelection(mode, true);
+	        	pinMode.setOnItemSelectedListener(temp);
+	        	pinLabel.setText(label);
+	        }
+	        
 	        // Dropped, reassign View to ViewGroup
 	        LinearLayout container = (LinearLayout) v;
 	        if (container.getChildCount() > 0) container.removeAllViews();
 	        container.addView(partIcon);
 	        partIcon.setVisibility(View.VISIBLE);
-	    
-	        // set the pin to having an LED
-	        if (pinMode != null) {
-	        	pinMode.setSelection(mode, true);
-	        	pinLabel.setText(label);
-	        }
+
         }
 
         break;
