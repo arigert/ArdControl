@@ -13,14 +13,18 @@
 
 #### Wish list ####
 
-* Make a progress dialog box pop up while it's searching for devices 
-* Add Disconnect button
-* Fix problems with Bluetooth not reconnecting after disconnecting
-* Remove a pin's icon if its mode is manually set
+* Make a progress dialog box pop up while it's searching for devices (Currently, have messages say we are searching so we don't block users from clicking a device before scanning complete)
+* Add Disconnect button (Styling is not good, but button exists and does seem to disconnect...)
+* Fix problems with Bluetooth not reconnecting after disconnecting (Will reconnect once, but does not continually reconnect)
+* Remove a pin's icon if its mode is manually set (Done. Aisha did it! Smart girl)
 * Disable illegal modes, like analogWrite on a non-PWM pin
 * Maybe work on UI design, especially for Bluetooth stuff
 * Maybe add additional modes (tone, Serial)
 * Maybe add additional items (temp sensor, tilt sensor, RGB LED, motor, shift register)
+
+#### To Fix List ####
+Do not allow users to move pins, etc. when bluetooth is not connected?
+Otherwise, state of GUI does not necessarily reflect state of actual Arduino.
 
 #### Contact ####
 
