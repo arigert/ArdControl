@@ -22,10 +22,6 @@
 * Maybe add additional modes (tone, Serial)
 * Maybe add additional items (temp sensor, tilt sensor, RGB LED, motor, shift register)
 
-#### To Fix List ####
-Do not allow users to move pins, etc. when bluetooth is not connected?
-Otherwise, state of GUI does not necessarily reflect state of actual Arduino.
-
 #### Contact ####
 
 * Owner: arigert
