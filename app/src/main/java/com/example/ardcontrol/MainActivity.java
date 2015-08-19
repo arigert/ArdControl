@@ -102,8 +102,8 @@ public class MainActivity extends Activity implements OnClickListener {
 	LinearLayout dropTarget[] = new LinearLayout[numPins];
 
 	// BT stuff
+	public BluetoothSocket btSocket = null;
 	private BluetoothAdapter mBluetoothAdapter = null;
-	private BluetoothSocket btSocket = null;
 	private BluetoothDevice btDevice = null;
 	private BluetoothDevice lastBtDevice = null;
 	private ListView btDeviceList;
@@ -229,7 +229,7 @@ public class MainActivity extends Activity implements OnClickListener {
              // Apply the adapter to the spinner
              pinMode[i].setAdapter(adapter);
              
-             pinMode[i].setOnItemSelectedListener(new OnModeChangedListener(dropTarget[i]));
+             pinMode[i].setOnItemSelectedListener(new OnModeChangedListener(this, dropTarget[i], pinMode[i]));
 
              // add the drag-and-drop functionality
     	     Drawable enterShape = ContextCompat.getDrawable(this, R.drawable.target_hover);
@@ -304,7 +304,7 @@ public class MainActivity extends Activity implements OnClickListener {
 				findDevices();
 				break;
 			case R.id.disconnect:
-				Toast.makeText(MainActivity, "Disconnecting device.", Toast.LENGTH_LONG).show();
+				Toast.makeText(MainActivity, "Disconnecting device.", Toast.LENGTH_SHORT).show();
 				disconnectDevice();
 				break;
 		}
@@ -594,14 +594,24 @@ public class MainActivity extends Activity implements OnClickListener {
 
 class OnModeChangedListener implements OnItemSelectedListener {
     LinearLayout indDropTarget;
+	MainActivity main;
+	Spinner spinner;
 
-    public OnModeChangedListener(LinearLayout indDropTarget) {
-	this.indDropTarget = indDropTarget;
-    }
+	public OnModeChangedListener(MainActivity main, LinearLayout indDropTarget, Spinner spinner) {
+		this.indDropTarget = indDropTarget;
+		this.main = main;
+    	this.spinner = spinner;
+	}
 
     @Override
     public void onItemSelected(AdapterView<?> parentView, View selectedItemView, int position, long id) {
-        if (indDropTarget.getChildCount() > 0) indDropTarget.removeAllViews();
+		if((main.btSocket == null || !main.btSocket.isConnected()) && position != 0) {
+			Toast.makeText(main, "Please connect to a device first.", Toast.LENGTH_SHORT).show();
+			spinner.setSelection(0);
+			return;
+		}
+
+		if (indDropTarget.getChildCount() > 0) indDropTarget.removeAllViews();
     }
 
     @Override
@@ -784,6 +794,10 @@ class TargetOnDragListener implements OnDragListener {
         v.setBackground(normalShape);
         break;
       case DragEvent.ACTION_DROP:
+		if(main.btSocket == null || !main.btSocket.isConnected()) {
+			Toast.makeText(main, "Please connect to a device first.", Toast.LENGTH_SHORT).show();
+			return true;
+		}
 	    View partIconView = (View)event.getLocalState();
 	    ViewGroup owner = (ViewGroup) partIconView.getParent();
 
@@ -804,7 +818,7 @@ class TargetOnDragListener implements OnDragListener {
         	owner.removeView(partIconView);
         }
 
-        if (!isSourceId(v.getId()))  {
+		if (!isSourceId(v.getId()))  {
 
     	    // add new part to the dropped group
 	    	ImageView partIcon = new ImageView(pinMode.getContext());
@@ -845,7 +859,6 @@ class TargetOnDragListener implements OnDragListener {
 	        if (container.getChildCount() > 0) container.removeAllViews();
 	        container.addView(partIcon);
 	        partIcon.setVisibility(View.VISIBLE);
-
         }
         break;
       case DragEvent.ACTION_DRAG_ENDED:
