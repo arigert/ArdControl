@@ -498,7 +498,7 @@ public class MainActivity extends Activity implements OnClickListener {
 		}
 
 		if (mReconnectDevicesReceiver != null) {
-			unregisterReceiver(mFindDevicesReceiver);
+			unregisterReceiver(mReconnectDevicesReceiver);
 			mReconnectDevicesReceiver = null;
 		}
     }
