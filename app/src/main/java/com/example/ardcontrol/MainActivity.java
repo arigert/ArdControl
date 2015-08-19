@@ -382,7 +382,7 @@ public class MainActivity extends Activity implements OnClickListener {
 			return;
 		}
 
-		Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_LONG).show();
+		Toast.makeText(MainActivity, "Scanning...", Toast.LENGTH_SHORT).show();
 
 		// delete anything already found so we don't get duplicates
 		btDeviceAdapter.clear();
@@ -454,7 +454,7 @@ public class MainActivity extends Activity implements OnClickListener {
 					if (btDeviceList.getVisibility() != View.GONE)
 						btDeviceList.setVisibility(View.GONE);
 					if (!success)
-						Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_LONG).show();
+						Toast.makeText(MainActivity, "Connection failed!", Toast.LENGTH_SHORT).show();
 					}
 				});
 			}
